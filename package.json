@@ -1,20 +1,18 @@
 {
   "name": "telegram-clone",
   "version": "13.1.0",
-  "description": "Простой мессенджер в реальном времени на Node.js",
+  "description": "Simple Telegram-like messenger",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "keywords": ["messenger", "socket.io", "realtime", "express"],
-  "author": "Ваше Имя",
-  "license": "MIT",
   "dependencies": {
-    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "socket.io": "^4.5.4"
+    "socket.io": "^4.5.4",
+    "cors": "^2.8.5"
   }
 }
+
 
 
 
