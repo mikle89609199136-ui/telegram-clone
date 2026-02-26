@@ -9,88 +9,129 @@ const io = socketIo(server, {
     cors: { origin: "*", methods: ["GET", "POST"] } 
 });
 
-// ХРАНИЛИЩЕ ИСТОРИИ ЧАТОВ
+// БАЗА ДАННЫХ ПОЛЬЗОВАТЕЛЕЙ И ЧАТОВ (память сайта)
+const usersDB = {};           // {email: {username, password, verified: true}}
+const sessions = {};          // {sessionId: {userId, username}}
 const chats = {
-    general: [],  // Общий чат
-    private: {}   // Личные чаты: { "socket1-socket2": [...] }
+    private: {},              // "user1-user2": [messages]
+    userMessages: {}          // userId: {toUserId: [messages]}
 };
+const resetCodes = {};        // {email: code}
 
 app.use(cors());
 app.use(express.json());
 
 app.get('/', (req, res) => {
-    res.send('<!DOCTYPE html><html><head><title>Telegram</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{background:linear-gradient(135deg,#0088cc,#00c4b4);height:100vh;overflow:hidden}@media (max-width: 768px) {#app{flex-direction:column;height:100vh}#sidebar{width:100%;height:40%;max-height:200px}#chat-area{flex:1;height:60%}#chat-header{padding:15px 20px}.user-item{padding:12px 15px;font-size:14px}.msg{max-width:85%}input,button{padding:12px;font-size:15px}}@media (max-width: 480px) {#sidebar{height:35%;max-height:160px}}#app{display:flex;height:100vh}#sidebar{width:300px;background:#1f2937;color:white;padding:20px;overflow-y:auto}#chat-area{flex:1;display:flex;flex-direction:column;background:white}#chat-header{height:60px;background:#0088cc;color:white;padding:20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 10px rgba(0,0,0,0.1)}#messages{flex:1;overflow-y:auto;padding:20px;background:#f0f2f5}#chat-input{display:flex;padding:20px;gap:10px;background:white;border-top:1px solid #eee;position:sticky;bottom:0}.user-list{margin-top:20px}.user-item{padding:15px;cursor:pointer;border-radius:12px;margin:5px 0;background:#374151;transition:all 0.2s}.user-item:hover{background:#4b5563}.user-item.active{background:#0088cc;box-shadow:0 4px 12px rgba(0,136,204,0.4)}.msg{padding:12px 16px;margin:8px 0;border-radius:18px;max-width:70%;word-wrap:break-word;box-shadow:0 1px 2px rgba(0,0,0,0.1)}.msg.sent{background:#0088cc;color:white;margin-left:auto;text-align:right}.msg.received{background:#e5e5ea;color:#333}.msg-time{font-size:11px;opacity:0.7;margin-top:4px}.user-name{font-weight:500}.user-id{font-size:12px;opacity:0.8}input{padding:14px;border:none;border-radius:25px;font-size:16px;flex:1;outline:none;background:#f0f2f5}input:focus{background:white;box-shadow:0 0 0 3px rgba(0,136,204,0.2)}button{padding:14px 20px;background:#0088cc;color:white;border:none;border-radius:25px;cursor:pointer;font-size:16px;font-weight:500;flex-shrink:0}#login{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:40px;border-radius:20px;width:90%;max-width:400px;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,0.3);z-index:1000}h1{color:#0088cc;margin-bottom:30px;font-size:2em}input{width:100%;margin:10px 0;padding:15px;border:1px solid #ddd;border-radius:12px;font-size:16px}</style></head><body><div id="login"><h1>🚀 Telegram</h1><input id="email" type="email" placeholder="test@mail.ru"><button onclick="sendCode()">Код</button><input id="code" type="text" placeholder="123456" maxlength="6"><button onclick="verifyCode()">Войти</button><div style="margin-top:20px;font-size:14px;color:#666">Код всегда: 123456</div></div><div id="app" style="display:none"><div id="sidebar"><h3>👥 Онлайн (<span id="online-count">0</span>)</h3><div id="user-list" class="user-list"></div></div><div id="chat-area"><div id="chat-header"><span id="chat-title">Общий чат</span><button onclick="leavePrivateChat()">← Назад</button></div><div id="messages">История чата загружается...</div><div id="chat-input"><input id="msg-input" placeholder="Сообщение... (Enter)" autofocus><button onclick="sendMsg()">➤</button></div></div></div><script src="/socket.io/socket.io.js"></script><script>const socket=io();let userId=null,currentChat=null,isPrivate=false;window.chatHistory={};function focusInput(){const i=document.getElementById("msg-input");setTimeout(()=>{i.focus()},100)}function loadChatHistory(chatId){const history=window.chatHistory[chatId]||[];const messagesEl=document.getElementById("messages");messagesEl.innerHTML="";history.forEach(msg=>{addMsg(msg,msg.from===userId?.slice(-4))})}async function sendCode(){const e=document.getElementById("email").value.trim();if(!e)return alert("Почта");await fetch("/send-code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:e})});alert("Код: 123456");document.getElementById("code").focus()}async function verifyCode(){const c=document.getElementById("code").value;if(c.length<6)return alert("Код");const r=await fetch("/verify-code",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:c})});const d=await r.json();if(d.success){userId=d.userId;document.getElementById("login").style.display="none";document.getElementById("app").style.display="flex";socket.emit("register",{userId,email:document.getElementById("email").value});setTimeout(()=>{focusInput();loadChatHistory("general")},500)}else alert("Неверный код: 123456")}function sendMsg(){const t=document.getElementById("msg-input").value.trim();if(!t||!userId)return;if(isPrivate&&currentChat)socket.emit("private-message",{to:currentChat,text:t});else socket.emit("message",{text:t});document.getElementById("msg-input").value=""}function selectUser(id){currentChat=id;isPrivate=true;const u=window.users[id];const n=u?u.email.split("@")[0]:id.slice(-4);document.getElementById("chat-title").textContent="Чат с "+n;document.querySelectorAll(".user-item").forEach(e=>e.classList.remove("active"));document.querySelector("[data-user=\'"+id+"\']").classList.add("active");loadChatHistory("private-"+socket.id+"-"+id);setTimeout(focusInput,300)}function leavePrivateChat(){isPrivate=false;currentChat=null;document.getElementById("chat-title").textContent="Общий чат";document.querySelectorAll(".user-item").forEach(e=>e.classList.remove("active"));loadChatHistory("general");setTimeout(focusInput,200)}socket.on("users-update",u=>{window.users=u;const l=document.getElementById("user-list"),countEl=document.getElementById("online-count");l.innerHTML="";countEl.textContent=Object.keys(u).length;Object.entries(u).forEach(([id,d])=>{if(id!==socket.id){const e=document.createElement("div");e.className="user-item";e.dataset.user=id;e.onclick=()=>selectUser(id);e.innerHTML="<div class=\\"user-name\\">"+d.email.split("@")[0]+"</div><div class=\\"user-id\\">"+id.slice(-4)+"</div>";l.appendChild(e)}})});socket.on("chat-history",data=>{window.chatHistory=data;loadChatHistory(isPrivate&&currentChat?"private-"+socket.id+"-"+currentChat:"general")});socket.on("new-message",m=>{addMsg(m,false);if(!isPrivate)window.chatHistory.general.push(m)});socket.on("private-message",m=>{const chatKey="private-"+socket.id+"-"+m.fromSocket;if(!window.chatHistory[chatKey])window.chatHistory[chatKey]=[];window.chatHistory[chatKey].push(m);if(isPrivate&&currentChat===m.fromSocket)addMsg(m,m.fromUser===socket.id.slice(-4))});function addMsg(m,isSent){const d=document.getElementById("messages"),e=document.createElement("div");e.className="msg "+(isSent?"sent":"received");e.innerHTML="<strong>"+(m.fromUser||m.from)+":</strong> "+m.text+"<div class=\\"msg-time\\">"+m.time+"</div>";d.appendChild(e);d.scrollTop=d.scrollHeight}document.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&document.getElementById("app").style.display!=="none"){e.preventDefault();sendMsg()}});document.getElementById("msg-input").addEventListener("blur",function(){setTimeout(()=>this.focus(),150)});</script></body></html>');
+    res.send('<!DOCTYPE html><html><head><title>Telegram</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>*{margin:0;padding:0;box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{background:linear-gradient(135deg,#0088cc,#00c4b4);min-height:100vh}@media (max-width:768px){#app-container{padding:10px}#sidebar{width:100%;height:40vh;max-height:250px}#chat-area{height:60vh}.user-item{padding:12px 15px;font-size:14px}.msg{max-width:85%}}#app-container{max-width:1200px;margin:0 auto;padding:20px}#auth{display:flex;gap:20px;justify-content:center;flex-wrap:wrap}@media (max-width:768px){#auth{flex-direction:column;align-items:center}}#register,#login,#forgot{background:white;padding:30px;border-radius:20px;width:100%;max-width:380px;box-shadow:0 20px 40px rgba(0,0,0,0.2)}#chat-app{display:none;flex-direction:row;height:80vh}@media (max-width:768px){#chat-app{flex-direction:column;height:90vh}}#sidebar{width:320px;background:#1f2937;color:white;padding:20px;overflow-y:auto;border-radius:15px 0 0 15px}@media (max-width:768px){#sidebar{width:100%;height:40vh;border-radius:15px 15px 0 0}}#chat-area{flex:1;display:flex;flex-direction:column;background:#f0f2f5;border-radius:0 15px 15px 15px}#chat-header{height:60px;background:#0088cc;color:white;padding:0 20px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 10px rgba(0,0,0,0.1);border-radius:0 15px 0 0}#messages{flex:1;overflow-y:auto;padding:20px}#chat-input{display:flex;padding:20px;gap:10px;background:white;border-top:1px solid #eee;border-radius:0 0 15px 15px}.user-list{margin-top:20px}.user-item{padding:15px;cursor:pointer;border-radius:12px;margin:5px 0;background:#374151;transition:all 0.2s}.user-item:hover{background:#4b5563}.user-item.active{background:#0088cc !important;box-shadow:0 4px 12px rgba(0,136,204,0.4)}.user-name{font-weight:500;font-size:16px}.user-id{font-size:12px;opacity:0.8}.msg{padding:12px 16px;margin:8px 0;border-radius:18px;max-width:70%;word-wrap:break-word;box-shadow:0 1px 2px rgba(0,0,0,0.1)}.msg.sent{background:#0088cc;color:white;margin-left:auto;text-align:right}.msg.received{background:#e5e5ea;color:#333}.msg-time{font-size:11px;opacity:0.7;margin-top:4px}input{padding:14px;border:1px solid #ddd;border-radius:12px;font-size:16px;width:100%;margin:8px 0}input:focus{outline:none;border-color:#0088cc;box-shadow:0 0 0 3px rgba(0,136,204,0.1)}button{padding:12px 24px;background:#0088cc;color:white;border:none;border-radius:12px;cursor:pointer;font-size:16px;font-weight:500;transition:all 0.2s}button:hover{background:#006ba0}button:active{transform:scale(0.98)}.error{color:#ef4444;margin:10px 0;font-size:14px}.success{color:#10b981;margin:10px 0;font-size:14px}h1,h2,h3{color:#0088cc;text-align:center}h2{font-size:1.5em;margin-bottom:20px}.form-group{margin-bottom:15px}</style></head><body><div id="app-container"><div id="auth"><div id="register"><h2>📝 Регистрация</h2><div class="form-group"><input id="reg-email" type="email" placeholder="email@gmail.com"></div><div class="form-group"><input id="reg-username" placeholder="@username"></div><div class="form-group"><input id="reg-password" type="password" placeholder="Пароль"></div><div class="form-group"><input id="reg-code" placeholder="Код с почты"></div><button onclick="register()">Зарегистрироваться</button><button onclick="showLogin()">Уже есть аккаунт?</button></div><div id="login" style="display:none"><h2>🔐 Вход</h2><div class="form-group"><input id="login-username" placeholder="@username"></div><div class="form-group"><input id="login-password" type="password" placeholder="Пароль"></div><button onclick="login()">Войти</button><button onclick="showRegister()">Регистрация</button><button onclick="showForgot()">Забыл пароль</button></div><div id="forgot" style="display:none"><h2>🔑 Сброс пароля</h2><div class="form-group"><input id="forgot-email" type="email" placeholder="email@gmail.com"></div><div class="form-group"><input id="forgot-code" placeholder="Код с почты"></div><div class="form-group"><input id="new-password" type="password" placeholder="Новый пароль"></div><button onclick="resetPassword()">Сменить пароль</button><button onclick="showLogin()">Назад ко входу</button></div></div><div id="chat-app"><div id="sidebar"><h3>👥 Онлайн (<span id="online-count">0</span>)</h3><div id="user-list" class="user-list"></div></div><div id="chat-area"><div id="chat-header"><span id="chat-title">@Все</span><button onclick="leavePrivateChat()">← Общий чат</button></div><div id="messages">Добро пожаловать в Telegram!</div><div id="chat-input"><input id="msg-input" placeholder="Напиши сообщение... (Enter)" autofocus><button onclick="sendMsg()">➤</button></div></div></div></div><script src="/socket.io/socket.io.js"></script><script>const socket=io();let currentUser=null,currentChat=null,isPrivateChat=false;window.userChats={};function focusInput(){setTimeout(()=>{document.getElementById("msg-input").focus()},100)}function showRegister(){document.getElementById("register").style.display="block";document.getElementById("login").style.display="none";document.getElementById("forgot").style.display="none"}function showLogin(){document.getElementById("register").style.display="none";document.getElementById("login").style.display="block";document.getElementById("forgot").style.display="none"}function showForgot(){document.getElementById("register").style.display="none";document.getElementById("login").style.display="none";document.getElementById("forgot").style.display="block"}async function register(){const email=document.getElementById("reg-email").value.trim(),username=document.getElementById("reg-username").value.trim(),password=document.getElementById("reg-password").value,code=document.getElementById("reg-code").value;if(!email||!username||!password)return document.getElementById("register").innerHTML+="<div class=\\"error\\">Заполните все поля</div>";const r=await fetch("/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,username,password,code})});const d=await r.json();if(d.success){currentUser=d.user;document.getElementById("chat-app").style.display="flex";document.getElementById("auth").style.display="none";socket.emit("login",d.user);focusInput()}else document.getElementById("register").innerHTML+="<div class=\\"error\\">"+d.error+"</div>"}async function login(){const username=document.getElementById("login-username").value.trim(),password=document.getElementById("login-password").value;if(!username||!password)return document.getElementById("login").innerHTML+="<div class=\\"error\\">Заполните поля</div>";const r=await fetch("/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});const d=await r.json();if(d.success){currentUser=d.user;document.getElementById("chat-app").style.display="flex";document.getElementById("auth").style.display="none";socket.emit("login",d.user);focusInput()}else document.getElementById("login").innerHTML+="<div class=\\"error\\">"+d.error+"</div>"}async function resetPassword(){const email=document.getElementById("forgot-email").value.trim(),code=document.getElementById("forgot-code").value,newPassword=document.getElementById("new-password").value;if(!email||!code||!newPassword)return document.getElementById("forgot").innerHTML+="<div class=\\"error\\">Заполните поля</div>";const r=await fetch("/reset-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,code,newPassword})});const d=await r.json();if(d.success){document.getElementById("forgot").innerHTML="<div class=\\"success\\">Пароль изменен! Войдите</div>";setTimeout(showLogin,2000)}else document.getElementById("forgot").innerHTML+="<div class=\\"error\\">"+d.error+"</div>"}function sendMsg(){const text=document.getElementById("msg-input").value.trim();if(!text||!currentUser)return;const target=isPrivateChat&&currentChat?currentChat:null;socket.emit("message",{text,target});document.getElementById("msg-input").value=""}function selectUser(targetUsername){currentChat=targetUsername;isPrivateChat=true;document.getElementById("chat-title").textContent="@" + targetUsername;document.querySelectorAll(".user-item").forEach(e=>e.classList.remove("active"));document.querySelector("[data-user=\'"+targetUsername+"\']").classList.add("active");loadChatHistory(targetUsername);focusInput()}function leavePrivateChat(){isPrivateChat=false;currentChat=null;document.getElementById("chat-title").textContent="@Все";document.querySelectorAll(".user-item").forEach(e=>e.classList.remove("active"));loadChatHistory(null);focusInput()}function loadChatHistory(target){const messagesEl=document.getElementById("messages");messagesEl.innerHTML="Загрузка истории...";socket.emit("get-history",{target})}function addMessage(msg,isOwn){const messagesEl=document.getElementById("messages");const msgEl=document.createElement("div");msgEl.className="msg "+(isOwn?"sent":"received");msgEl.innerHTML="<strong>@"+msg.from+":</strong> "+msg.text+"<div class=\\"msg-time\\">"+msg.time+"</div>";messagesEl.appendChild(msgEl);messagesEl.scrollTop=messagesEl.scrollHeight}socket.on("user-list",users=>{const listEl=document.getElementById("user-list");document.getElementById("online-count").textContent=Object.keys(users).length;listEl.innerHTML="";Object.entries(users).forEach(([id,user])=>{if(id!==socket.id){const div=document.createElement("div");div.className="user-item";div.dataset.user=user.username;div.onclick=()=>selectUser(user.username);div.innerHTML="<div class=\\"user-name\\">"+user.username+"</div><div class=\\"user-id\\">"+id.slice(-4)+"</div>";listEl.appendChild(div)}})});socket.on("message",msg=>{addMessage(msg,msg.from===currentUser.username)});socket.on("history",data=>{const messagesEl=document.getElementById("messages");messagesEl.innerHTML="";data.forEach(msg=>addMessage(msg,msg.from===currentUser.username))});document.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&document.getElementById("chat-app").style.display!=="none"){e.preventDefault();sendMsg()}});document.getElementById("msg-input").addEventListener("blur",()=>setTimeout(focusInput,100));</script></body></html>');
 });
 
-app.post('/send-code', (req, res) => {
-    console.log("Код для " + req.body.email + ": 123456");
-    res.json({ success: true });
-});
-
-app.post('/verify-code', (req, res) => {
-    if (req.body.code === '123456') {
-        res.json({ success: true, userId: Date.now().toString() });
-    } else {
-        res.json({ success: false });
+// API РЕГИСТРАЦИИ И ВХОДА
+app.post('/register', (req, res) => {
+    const {email, username, password, code} = req.body;
+    
+    // Проверка кода подтверждения
+    if (code !== "123456") {
+        return res.json({success: false, error: "Неверный код. Используйте 123456"});
     }
+    
+    if (usersDB[email]) {
+        return res.json({success: false, error: "Аккаунт уже существует! Войдите"});
+    }
+    
+    usersDB[email] = {
+        username: username.replace('@', ''),
+        password: password,
+        verified: true
+    };
+    
+    console.log("Новый пользователь: " + username + " (" + email + ")");
+    res.json({success: true, user: {username: username.replace('@', ''), email}});
+});
+
+app.post('/login', (req, res) => {
+    const {username, password} = req.body;
+    const user = Object.values(usersDB).find(u => u.username === username.replace('@', ''));
+    
+    if (!user || user.password !== password) {
+        return res.json({success: false, error: "Неверный логин или пароль"});
+    }
+    
+    const sessionId = Date.now().toString();
+    sessions[sessionId] = {userId: sessionId, username: user.username};
+    
+    res.json({success: true, user: {username: user.username, sessionId}});
+});
+
+app.post('/send-reset-code', (req, res) => {
+    const {email} = req.body;
+    resetCodes[email] = "123456";
+    console.log("Код сброса для " + email + ": 123456");
+    res.json({success: true});
+});
+
+app.post('/reset-password', (req, res) => {
+    const {email, code, newPassword} = req.body;
+    
+    if (resetCodes[email] !== code) {
+        return res.json({success: false, error: "Неверный код сброса"});
+    }
+    
+    if (!usersDB[email]) {
+        return res.json({success: false, error: "Пользователь не найден"});
+    }
+    
+    usersDB[email].password = newPassword;
+    delete resetCodes[email];
+    
+    res.json({success: true});
 });
 
 io.on('connection', (socket) => {
     console.log('Подключился: ' + socket.id);
     
-    // Отправляем историю чата при подключении
-    socket.emit('chat-history', chats);
+    socket.on('login', (user) => {
+        sessions[socket.id] = user;
+        io.emit('user-list', sessions);
+        socket.emit('history', []);
+        console.log('Вошел: @' + user.username);
+    });
     
-    socket.on('register', (userData) => {
-        users[socket.id] = userData;
-        io.emit('users-update', users);
-        socket.emit('chat-history', chats);
-        console.log('Зарегистрирован: ' + userData.email);
-    });
-
     socket.on('message', (data) => {
-        const message = { 
-            from: socket.id.slice(-4),
-            fromSocket: socket.id,
-            text: data.text,
-            time: new Date().toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-        };
+        const session = sessions[socket.id];
+        if (!session) return;
         
-        // Сохраняем в общий чат
-        chats.general.push(message);
-        if (chats.general.length > 100) chats.general.shift(); // Ограничиваем 100 сообщений
-        
-        socket.broadcast.emit('new-message', message);
-        console.log('Общий чат: ' + message.text);
-    });
-
-    socket.on('private-message', (data) => {
         const message = {
-            fromUser: socket.id.slice(-4),
-            fromSocket: socket.id,
+            from: session.username,
             text: data.text,
-            time: new Date().toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+            time: new Date().toLocaleString('ru-RU', {hour: '2-digit', minute: '2-digit'}),
+            to: data.target
         };
         
-        // Создаем ключ для ЛС (сортируем чтобы был одинаковый для обоих)
-        const chatKey = [socket.id, data.to].sort().join('-');
-        if (!chats.private[chatKey]) chats.private[chatKey] = [];
-        chats.private[chatKey].push(message);
-        if (chats.private[chatKey].length > 50) chats.private[chatKey].shift();
+        // Сохраняем ЛС
+        if (data.target) {
+            const chatKey = [session.username, data.target].sort().join('-');
+            if (!chats.private[chatKey]) chats.private[chatKey] = [];
+            chats.private[chatKey].push(message);
+        }
         
-        io.to(data.to).emit('private-message', message);
-        socket.emit('private-message', message);
-        console.log('ЛС ' + socket.id.slice(-4) + ' -> ' + data.to.slice(-4) + ': ' + data.text);
+        io.emit('message', message);
     });
-
+    
+    socket.on('get-history', (data) => {
+        const session = sessions[socket.id];
+        if (!session || !data.target) return [];
+        
+        const chatKey = [session.username, data.target].sort().join('-');
+        socket.emit('history', chats.private[chatKey] || []);
+    });
+    
     socket.on('disconnect', () => {
-        delete users[socket.id];
-        io.emit('users-update', users);
-        console.log('Отключился: ' + socket.id);
+        delete sessions[socket.id];
+        io.emit('user-list', sessions);
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log("Telegram с историей на порту " + PORT);
+    console.log("Telegram PRO на порту " + PORT);
 });
