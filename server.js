@@ -15,291 +15,13 @@ const io = socketIo(server, {
   transports: ['websocket']
 });
 
-// ==================== НАСТРОЙКА ХРАНЕНИЯ ДАННЫХ ====================
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+// ==================== СОЗДАНИЕ ПАПКИ public И ФАЙЛА index.html, ЕСЛИ ИХ НЕТ ====================
+const publicDir = path.join(__dirname, 'public');
+if (!fs.existsSync(publicDir)) fs.mkdirSync(publicDir);
 
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
-
-// Чтение/запись пользователей
-function loadUsers() {
-  try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-function saveUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-}
-
-// Чтение/запись чатов
-function loadChats() {
-  try {
-    return JSON.parse(fs.readFileSync(CHATS_FILE, 'utf8'));
-  } catch {
-    return {};
-  }
-}
-function saveChats(chats) {
-  fs.writeFileSync(CHATS_FILE, JSON.stringify(chats, null, 2));
-}
-
-// Инициализация
-let usersDB = loadUsers();
-let privateChats = loadChats();
-const onlineUsers = new Map(); // userId -> socketId
-
-// Rate limiting
-const rateLimits = new Map();
-function checkRate(userId) {
-  const now = Date.now();
-  const data = rateLimits.get(userId) || { count: 0, reset: now + 60000 };
-  if (now > data.reset) {
-    data.count = 0;
-    data.reset = now + 60000;
-  }
-  if (data.count > 30) return false;
-  data.count++;
-  rateLimits.set(userId, data);
-  return true;
-}
-
-// ==================== МИДЛВАРЫ ====================
-app.use(compression());
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1d' }));
-app.set('trust proxy', 1);
-
-// ==================== API МАРШРУТЫ ====================
-
-// Регистрация
-app.post('/api/register', (req, res) => {
-  const { email, password, username, confirmPassword } = req.body;
-
-  if (!email.includes('@') || !username || password.length < 6 || password !== confirmPassword) {
-    return res.status(400).json({ error: 'Неверные данные или пароли не совпадают' });
-  }
-  if (usersDB[email]) {
-    return res.status(400).json({ error: 'Аккаунт с таким email уже существует' });
-  }
-
-  const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  usersDB[email] = {
-    id: userId,
-    email,
-    username: username.toLowerCase(),
-    name: username.charAt(0).toUpperCase() + username.slice(1),
-    avatar: '👤',
-    password, // в реальном проекте нужно хешировать!
-    theme: 'telegram',
-    phone: '',
-    birthday: '',
-    created: new Date().toISOString(),
-    lastSeen: null,
-    online: false,
-    folders: {},
-    pinned: [],
-    notifications: {}
-  };
-
-  saveUsers(usersDB);
-  res.json({ success: true, user: usersDB[email] });
-});
-
-// Логин
-app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
-
-  for (let email in usersDB) {
-    const user = usersDB[email];
-    if ((user.username === username || user.email === username) && user.password === password) {
-      user.online = true;
-      user.lastSeen = new Date().toISOString();
-      saveUsers(usersDB);
-      return res.json({ success: true, user });
-    }
-  }
-  res.status(401).json({ error: 'Неверный логин или пароль' });
-});
-
-// Восстановление пароля (отправка кода)
-app.post('/api/forgot-password', (req, res) => {
-  const { email } = req.body;
-  if (usersDB[email]) {
-    const code = Math.floor(100000 + Math.random() * 900000);
-    usersDB[email].recoveryCode = code;
-    usersDB[email].recoveryExpires = Date.now() + 300000;
-    saveUsers(usersDB);
-    console.log(`📧 Код для ${email}: ${code}`); // в реальном проекте отправляйте на email
-    res.json({ success: true });
-  } else {
-    res.status(404).json({ error: 'Email не найден' });
-  }
-});
-
-// Проверка кода
-app.post('/api/verify-code', (req, res) => {
-  const { email, code } = req.body;
-  const user = usersDB[email];
-  if (user && user.recoveryCode == code && Date.now() < user.recoveryExpires) {
-    res.json({ success: true });
-  } else {
-    res.status(400).json({ error: 'Неверный код' });
-  }
-});
-
-// Сброс пароля
-app.post('/api/reset-password', (req, res) => {
-  const { email, newPassword } = req.body;
-  const user = usersDB[email];
-  if (user) {
-    user.password = newPassword;
-    delete user.recoveryCode;
-    delete user.recoveryExpires;
-    saveUsers(usersDB);
-    res.json({ success: true });
-  } else {
-    res.status(400).json({ error: 'Пользователь не найден' });
-  }
-});
-
-// Получить всех пользователей (кроме текущего)
-app.get('/api/users', (req, res) => {
-  const excludeId = req.query.exclude;
-  const users = Object.values(usersDB).map(u => ({
-    id: u.id, name: u.name, username: u.username,
-    avatar: u.avatar, online: u.online, lastSeen: u.lastSeen
-  })).filter(u => !excludeId || u.id !== excludeId);
-  res.json(users);
-});
-
-// Получить чаты текущего пользователя
-app.get('/api/chats/:userId', (req, res) => {
-  const userId = req.params.userId;
-  const chats = [];
-  for (let chatId in privateChats) {
-    if (chatId.includes(userId)) {
-      const messages = privateChats[chatId];
-      const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-      // Определяем собеседника
-      const participants = chatId.split('_');
-      const otherId = participants.find(id => id !== userId);
-      const otherUser = Object.values(usersDB).find(u => u.id === otherId);
-      if (otherUser) {
-        chats.push({
-          chatId,
-          userId: otherUser.id,
-          name: otherUser.name,
-          avatar: otherUser.avatar,
-          online: otherUser.online,
-          lastMessage: lastMsg ? { text: lastMsg.text, time: lastMsg.time, from: lastMsg.from } : null,
-          unread: messages.filter(m => m.to === userId && !m.read).length
-        });
-      }
-    }
-  }
-  // Сортируем по последнему сообщению
-  chats.sort((a, b) => {
-    const timeA = a.lastMessage ? new Date(a.lastMessage.time) : 0;
-    const timeB = b.lastMessage ? new Date(b.lastMessage.time) : 0;
-    return timeB - timeA;
-  });
-  res.json(chats);
-});
-
-// Получить историю сообщений с конкретным пользователем
-app.get('/api/messages/:userId/:otherId', (req, res) => {
-  const { userId, otherId } = req.params;
-  const chatId = [userId, otherId].sort().join('_');
-  const messages = privateChats[chatId] || [];
-  // Помечаем как прочитанные
-  if (privateChats[chatId]) {
-    privateChats[chatId].forEach(msg => {
-      if (msg.to === userId) msg.read = true;
-    });
-    saveChats(privateChats);
-  }
-  res.json(messages);
-});
-
-// ==================== SOCKET.IO ====================
-io.on('connection', (socket) => {
-  console.log('🔌 Пользователь подключился:', socket.id);
-
-  socket.on('join', (userId) => {
-    socket.join(userId);
-    socket.userId = userId;
-    onlineUsers.set(userId, socket.id);
-
-    // Обновляем статус online в базе
-    for (let email in usersDB) {
-      if (usersDB[email].id === userId) {
-        usersDB[email].online = true;
-        usersDB[email].lastSeen = new Date().toISOString();
-        saveUsers(usersDB);
-        break;
-      }
-    }
-
-    io.emit('userOnline', userId);
-  });
-
-  socket.on('message', (data) => {
-    if (!checkRate(data.from)) {
-      socket.emit('error', 'Rate limit exceeded');
-      return;
-    }
-
-    const chatId = [data.from, data.to].sort().join('_');
-    if (!privateChats[chatId]) privateChats[chatId] = [];
-
-    const message = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      from: data.from,
-      to: data.to,
-      text: data.text,
-      time: new Date().toISOString(),
-      read: false,
-      edited: false
-    };
-
-    privateChats[chatId].push(message);
-    saveChats(privateChats);
-
-    // Отправляем получателю, если онлайн
-    io.to(data.from).to(data.to).emit('newMessage', { chatId, message });
-  });
-
-  socket.on('typing', (data) => {
-    socket.to(data.to).emit('typing', { from: data.from });
-  });
-
-  socket.on('disconnect', () => {
-    if (socket.userId) {
-      onlineUsers.delete(socket.userId);
-
-      // Обновляем статус в базе
-      for (let email in usersDB) {
-        if (usersDB[email].id === socket.userId) {
-          usersDB[email].online = false;
-          usersDB[email].lastSeen = new Date().toISOString();
-          saveUsers(usersDB);
-          break;
-        }
-      }
-
-      io.emit('userOffline', socket.userId);
-    }
-    console.log('🔌 Пользователь отключился:', socket.id);
-  });
-});
-
-// ==================== КЛИЕНТ (HTML + CSS + JS) ====================
-app.get('/', (req, res) => {
-  res.send(`<!DOCTYPE html>
+const indexPath = path.join(publicDir, 'index.html');
+if (!fs.existsSync(indexPath)) {
+  const htmlContent = `<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
@@ -307,84 +29,44 @@ app.get('/', (req, res) => {
   <title>Zhuravlev Messenger</title>
   <link href="https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    /* Вставьте сюда все стили из предыдущего ответа (полный CSS) */
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     html, body { height: 100%; overflow-x: hidden; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-
-    :root {
-      --primary-color: #34c759;
-      --blue: #0088cc;
-      --white: #ffffff;
-      --gray: #8e8e93;
-      --bg: #eff2f5;
-      --chatlist: #f8f9fa;
-    }
-
-    #welcome-screen {
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: linear-gradient(135deg, #0088cc 0%, #005f99 50%, #003d73 100%);
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      text-align: center; color: white; padding: 2rem; z-index: 1000;
-    }
-    .zhuravlev-logo {
-      font-size: clamp(4rem, 15vw, 8rem); font-weight: 900;
-      background: linear-gradient(135deg, #34c759 0%, #5ac8fa 50%, #ff3b30 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      margin-bottom: 1.5rem; animation: logoFloat 3s ease-in-out infinite;
-    }
+    :root { --primary-color: #34c759; --blue: #0088cc; --white: #ffffff; --gray: #8e8e93; --bg: #eff2f5; --chatlist: #f8f9fa; }
+    #welcome-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #0088cc 0%, #005f99 50%, #003d73 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: white; padding: 2rem; z-index: 1000; }
+    .zhuravlev-logo { font-size: clamp(4rem, 15vw, 8rem); font-weight: 900; background: linear-gradient(135deg, #34c759 0%, #5ac8fa 50%, #ff3b30 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 1.5rem; animation: logoFloat 3s ease-in-out infinite; }
     @keyframes logoFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
     .welcome-title { font-size: clamp(2rem, 8vw, 3rem); font-weight: 800; margin-bottom: 1rem; }
     .welcome-subtitle { font-size: 1.2rem; opacity: 0.9; margin-bottom: 4rem; }
-
-    .telegram-btn {
-      width: 90%; max-width: 380px; padding: 1.6rem 3rem; margin-bottom: 1.8rem;
-      background: linear-gradient(135deg, var(--primary-color) 0%, #30d158 100%);
-      color: white; border: none; border-radius: 28px; font-size: clamp(1.15rem, 5vw, 1.4rem);
-      font-weight: 700; cursor: pointer; transition: all 0.3s; box-shadow: 0 14px 40px rgba(52,199,89,0.4);
-    }
+    .telegram-btn { width: 90%; max-width: 380px; padding: 1.6rem 3rem; margin-bottom: 1.8rem; background: linear-gradient(135deg, var(--primary-color) 0%, #30d158 100%); color: white; border: none; border-radius: 28px; font-size: clamp(1.15rem, 5vw, 1.4rem); font-weight: 700; cursor: pointer; transition: all 0.3s; box-shadow: 0 14px 40px rgba(52,199,89,0.4); }
     .telegram-btn:hover { transform: translateY(-4px); box-shadow: 0 22px 50px rgba(52,199,89,0.5); }
     .login-btn { background: rgba(255,255,255,0.2); backdrop-filter: blur(25px); border: 1px solid rgba(255,255,255,0.2); }
-
     #auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1001; display: none; }
-    .auth-card {
-      position: absolute; bottom: 0; left: 0; right: 0; background: white; border-radius: 36px 36px 0 0;
-      padding: 3rem 2.8rem 4rem; max-height: 90vh; overflow-y: auto; transform: translateY(100%);
-      transition: transform 0.45s cubic-bezier(0.25,0.46,0.45,0.94);
-    }
+    .auth-card { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-radius: 36px 36px 0 0; padding: 3rem 2.8rem 4rem; max-height: 90vh; overflow-y: auto; transform: translateY(100%); transition: transform 0.45s cubic-bezier(0.25,0.46,0.45,0.94); }
     .auth-card.visible { transform: translateY(0); }
     .auth-header { text-align: center; margin-bottom: 3rem; }
     .auth-title { font-size: 2.6rem; font-weight: 800; color: #000; margin-bottom: 0.7rem; }
     .auth-subtitle { color: #8e8e93; font-size: 1.2rem; font-weight: 500; }
     .form-field { margin-bottom: 2.3rem; }
     .field-label { display: block; font-weight: 600; color: #3c3c43; margin-bottom: 0.9rem; font-size: 1rem; }
-    .field-input {
-      width: 100%; padding: 1.4rem 1.6rem; border: 2px solid #e5e5ea; border-radius: 20px;
-      font-size: 1.1rem; background: #f2f2f7; transition: all 0.3s; font-family: inherit;
-    }
+    .field-input { width: 100%; padding: 1.4rem 1.6rem; border: 2px solid #e5e5ea; border-radius: 20px; font-size: 1.1rem; background: #f2f2f7; transition: all 0.3s; font-family: inherit; }
     .field-input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 4px rgba(52,199,89,0.12); }
     .warning-text { font-size: 0.9rem; color: #ff9500; margin-top: 0.7rem; background: #fff5e6; padding: 0.8rem; border-radius: 12px; border-left: 4px solid #ff9500; }
     .auth-link { color: #007aff; text-decoration: none; font-weight: 600; font-size: 1.05rem; cursor: pointer; }
     .auth-link:hover { text-decoration: underline; }
-
     .code-grid { display: flex; gap: 1.4rem; justify-content: center; margin: 3.5rem 0 3rem; }
-    .code-input {
-      width: 68px; height: 68px; font-size: 2.2rem; font-weight: 800; text-align: center;
-      border: 3px solid #e5e5ea; border-radius: 20px; background: #f2f2f7; transition: all 0.3s;
-      font-family: monospace;
-    }
+    .code-input { width: 68px; height: 68px; font-size: 2.2rem; font-weight: 800; text-align: center; border: 3px solid #e5e5ea; border-radius: 20px; background: #f2f2f7; transition: all 0.3s; font-family: monospace; }
     .code-input:focus { border-color: var(--primary-color); }
     .code-input.success { border-color: var(--primary-color) !important; background: #d4edda !important; }
     .code-input.error { border-color: #ff3b30 !important; background: #f8d7da !important; animation: shake 0.6s; }
     @keyframes shake { 0%,100%{transform:translateX(0);}20%{transform:translateX(-10px);}40%{transform:translateX(10px);} }
-
     #main-app { display: none; height: 100vh; overflow: hidden; flex-direction: column; background: var(--bg); }
     .chat-list-screen, .chat-screen { display: none; height: 100%; }
     .chat-list-screen.active { display: block; }
-
     #chat-list-container { width: 100%; height: calc(100vh - 82px); background: var(--chatlist); overflow-y: auto; padding: 1.8rem 0; }
     .search-bar { position: sticky; top: 0; background: white; padding: 1.3rem 1.8rem; display: flex; align-items: center; box-shadow: 0 3px 15px rgba(0,0,0,0.1); z-index: 10; margin-bottom: 1.2rem; }
     .search-input { flex: 1; border: none; background: #f2f2f7; padding: 1.1rem 1.4rem; border-radius: 22px; font-size: 1.05rem; }
     .search-edit { background: var(--primary-color); color: white; border-radius: 22px; padding: 1.1rem 1rem; margin-left: 0.8rem; font-weight: 600; border: none; cursor: pointer; }
-
     .chat-item { display: flex; padding: 1.2rem 1.8rem; margin: 0 1.2rem; border-radius: 18px; cursor: pointer; background: white; margin-bottom: 0.6rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); transition: all 0.25s; }
     .chat-item:hover { background: #f0f8f0; transform: translateX(4px); }
     .chat-avatar { width: 56px; height: 56px; border-radius: 28px; background: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; margin-right: 1.4rem; }
@@ -393,12 +75,10 @@ app.get('/', (req, res) => {
     .chat-preview { font-size: 0.95rem; color: #8e8e93; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-meta { display: flex; align-items: center; font-size: 0.85rem; color: #8e8e93; min-width: 80px; justify-content: flex-end; }
     .read-status { margin-right: 0.7rem; font-size: 1.05rem; }
-
     .chat-header { height: 75px; background: rgba(255,255,255,0.97); backdrop-filter: blur(30px); border-bottom: 1px solid #e5e5ea; display: flex; align-items: center; padding: 0 1.8rem; position: fixed; top: 0; left: 0; right: 0; z-index: 200; }
     .header-back { width: 48px; height: 48px; border-radius: 24px; border: none; background: rgba(0,0,0,0.08); font-size: 1.45rem; cursor: pointer; margin-right: 1.2rem; display: flex; align-items: center; justify-content: center; }
     .header-title { font-weight: 800; font-size: 1.25rem; flex: 1; }
     .header-avatar { width: 44px; height: 44px; border-radius: 22px; background: var(--primary-color); color: white; font-size: 1.2rem; display: flex; align-items: center; justify-content: center; }
-
     .chat-messages { flex: 1; overflow-y: auto; padding: 2rem 1.6rem; background: var(--bg); margin-top: 75px; padding-bottom: 120px; }
     .message { margin-bottom: 1.4rem; display: flex; align-items: flex-end; max-width: 84%; animation: messageSlide 0.4s; }
     .message.sent { margin-left: auto; flex-direction: row-reverse; }
@@ -408,17 +88,11 @@ app.get('/', (req, res) => {
     .msg-time { font-size: 0.78rem; opacity: 0.9; margin-left: 0.8rem; font-weight: 600; margin-top: 0.15rem; }
     .read-indicator { position: absolute; bottom: 6px; right: 10px; font-size: 0.8rem; }
     @keyframes messageSlide { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
-
-    .message-input-area {
-      position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.98);
-      backdrop-filter: blur(35px); padding: 1.4rem 1.8rem; display: flex; align-items: flex-end;
-      gap: 1.4rem; border-top: 1px solid #e5e5ea; z-index: 150;
-    }
+    .message-input-area { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.98); backdrop-filter: blur(35px); padding: 1.4rem 1.8rem; display: flex; align-items: flex-end; gap: 1.4rem; border-top: 1px solid #e5e5ea; z-index: 150; }
     .attach-btn { width: 54px; height: 54px; border-radius: 27px; border: none; background: #f2f2f7; font-size: 1.45rem; cursor: pointer; }
     #message-input { flex: 1; padding: 1.2rem 1.6rem; border: 2px solid #e5e5ea; border-radius: 30px; font-size: 1.05rem; resize: none; max-height: 160px; min-height: 54px; background: #f2f2f7; }
     #send-button { width: 54px; height: 54px; border-radius: 27px; border: none; background: var(--primary-color); color: white; font-size: 1.45rem; cursor: pointer; }
     #send-button:disabled { opacity: 0.5; cursor: not-allowed; }
-
     .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: 82px; background: rgba(255,255,255,0.98); backdrop-filter: blur(35px); display: flex; border-top: 1px solid #e5e5ea; z-index: 100; }
     .nav-item { flex: 1; padding: 1.3rem 0; text-align: center; border: none; background: none; cursor: pointer; font-size: 1.6rem; color: #8e8e93; }
     .nav-item.active { color: var(--primary-color); }
@@ -585,9 +259,7 @@ app.get('/', (req, res) => {
     let allUsers = [];
     let chats = [];
     let messages = [];
-    let typingTimeout = null;
 
-    // ========== УПРАВЛЕНИЕ ЭКРАНАМИ ==========
     function showRegisterForm() {
       hideAllForms();
       document.getElementById('register-form').style.display = 'block';
@@ -636,7 +308,6 @@ app.get('/', (req, res) => {
       document.getElementById('auth-overlay').style.display = 'none';
     }
 
-    // ========== РЕГИСТРАЦИЯ ==========
     async function registerUser() {
       const email = document.getElementById('reg-email').value.trim();
       const username = document.getElementById('reg-username').value.trim();
@@ -668,7 +339,6 @@ app.get('/', (req, res) => {
       }
     }
 
-    // ========== ЛОГИН ==========
     async function loginUser() {
       const username = document.getElementById('login-username').value.trim();
       const password = document.getElementById('login-password').value;
@@ -693,7 +363,6 @@ app.get('/', (req, res) => {
       }
     }
 
-    // ========== ВОССТАНОВЛЕНИЕ ПАРОЛЯ ==========
     async function sendRecoveryCode() {
       const email = document.getElementById('forgot-email').value.trim();
       if (!email) return alert('Введите email');
@@ -773,7 +442,6 @@ app.get('/', (req, res) => {
       }
     }
 
-    // ========== ЗАГРУЗКА ДАННЫХ ==========
     async function loadAllUsers() {
       if (!currentUser) return;
       const res = await fetch('/api/users?exclude=' + currentUser.id);
@@ -809,7 +477,6 @@ app.get('/', (req, res) => {
       });
     }
 
-    // ========== ЧАТ ==========
     async function openChat(userId, name, avatar) {
       currentChat = { id: userId, name, avatar };
       document.getElementById('chat-title').innerText = name;
@@ -817,7 +484,6 @@ app.get('/', (req, res) => {
       document.getElementById('chat-list-screen').classList.remove('active');
       document.getElementById('chat-screen').style.display = 'flex';
 
-      // Загружаем историю
       const res = await fetch(\`/api/messages/\${currentUser.id}/\${userId}\`);
       messages = await res.json();
       renderMessages();
@@ -847,7 +513,7 @@ app.get('/', (req, res) => {
       document.getElementById('chat-screen').style.display = 'none';
       document.getElementById('chat-list-screen').classList.add('active');
       currentChat = null;
-      loadChats(); // обновить список (непрочитанные и т.д.)
+      loadChats();
     }
 
     function autoResize(textarea) {
@@ -877,25 +543,17 @@ app.get('/', (req, res) => {
       autoResize(input);
     }
 
-    // ========== СОКЕТЫ ==========
     socket.on('newMessage', (data) => {
       if (currentChat && (data.message.from === currentChat.id || data.message.to === currentChat.id)) {
         messages.push(data.message);
         renderMessages();
       }
-      // Обновить список чатов (последнее сообщение)
       loadChats();
     });
 
-    socket.on('userOnline', (userId) => {
-      // можно обновить индикатор в шапке чата
-    });
+    socket.on('userOnline', (userId) => {});
+    socket.on('userOffline', (userId) => {});
 
-    socket.on('userOffline', (userId) => {
-      // аналогично
-    });
-
-    // ========== НАВИГАЦИЯ ==========
     function showChats() {
       document.querySelectorAll('.nav-item').forEach((btn, idx) => {
         btn.classList.toggle('active', idx === 0);
@@ -905,23 +563,11 @@ app.get('/', (req, res) => {
       loadChats();
     }
 
-    function showContacts() {
-      alert('Контакты в разработке');
-    }
+    function showContacts() { alert('Контакты в разработке'); }
+    function showSettings() { alert('Настройки в разработке'); }
+    function filterChats() {}
+    function toggleEditMode() { alert('Режим редактирования'); }
 
-    function showSettings() {
-      alert('Настройки в разработке');
-    }
-
-    function filterChats() {
-      // TODO: фильтрация по имени
-    }
-
-    function toggleEditMode() {
-      alert('Режим редактирования');
-    }
-
-    // ========== ИНИЦИАЛИЗАЦИЯ ==========
     (function init() {
       const saved = localStorage.getItem('user');
       if (saved) {
@@ -935,7 +581,278 @@ app.get('/', (req, res) => {
     })();
   </script>
 </body>
-</html>`);
+</html>`;
+  fs.writeFileSync(indexPath, htmlContent);
+  console.log('✅ Файл public/index.html создан автоматически.');
+}
+
+// ==================== НАСТРОЙКА ХРАНЕНИЯ ДАННЫХ ====================
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
+
+function loadUsers() {
+  try {
+    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function saveUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+function loadChats() {
+  try {
+    return JSON.parse(fs.readFileSync(CHATS_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function saveChats(chats) {
+  fs.writeFileSync(CHATS_FILE, JSON.stringify(chats, null, 2));
+}
+
+let usersDB = loadUsers();
+let privateChats = loadChats();
+const onlineUsers = new Map();
+
+const rateLimits = new Map();
+function checkRate(userId) {
+  const now = Date.now();
+  const data = rateLimits.get(userId) || { count: 0, reset: now + 60000 };
+  if (now > data.reset) {
+    data.count = 0;
+    data.reset = now + 60000;
+  }
+  if (data.count > 30) return false;
+  data.count++;
+  rateLimits.set(userId, data);
+  return true;
+}
+
+// ==================== МИДЛВАРЫ ====================
+app.use(compression());
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(publicDir, { maxAge: '1d' }));
+app.set('trust proxy', 1);
+
+// ==================== API МАРШРУТЫ ====================
+
+app.post('/api/register', (req, res) => {
+  const { email, password, username, confirmPassword } = req.body;
+
+  if (!email.includes('@') || !username || password.length < 6 || password !== confirmPassword) {
+    return res.status(400).json({ error: 'Неверные данные или пароли не совпадают' });
+  }
+  if (usersDB[email]) {
+    return res.status(400).json({ error: 'Аккаунт с таким email уже существует' });
+  }
+
+  const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  usersDB[email] = {
+    id: userId,
+    email,
+    username: username.toLowerCase(),
+    name: username.charAt(0).toUpperCase() + username.slice(1),
+    avatar: '👤',
+    password,
+    theme: 'telegram',
+    phone: '',
+    birthday: '',
+    created: new Date().toISOString(),
+    lastSeen: null,
+    online: false,
+    folders: {},
+    pinned: [],
+    notifications: {}
+  };
+
+  saveUsers(usersDB);
+  res.json({ success: true, user: usersDB[email] });
+});
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+
+  for (let email in usersDB) {
+    const user = usersDB[email];
+    if ((user.username === username || user.email === username) && user.password === password) {
+      user.online = true;
+      user.lastSeen = new Date().toISOString();
+      saveUsers(usersDB);
+      return res.json({ success: true, user });
+    }
+  }
+  res.status(401).json({ error: 'Неверный логин или пароль' });
+});
+
+app.post('/api/forgot-password', (req, res) => {
+  const { email } = req.body;
+  if (usersDB[email]) {
+    const code = Math.floor(100000 + Math.random() * 900000);
+    usersDB[email].recoveryCode = code;
+    usersDB[email].recoveryExpires = Date.now() + 300000;
+    saveUsers(usersDB);
+    console.log(`📧 Код для ${email}: ${code}`);
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Email не найден' });
+  }
+});
+
+app.post('/api/verify-code', (req, res) => {
+  const { email, code } = req.body;
+  const user = usersDB[email];
+  if (user && user.recoveryCode == code && Date.now() < user.recoveryExpires) {
+    res.json({ success: true });
+  } else {
+    res.status(400).json({ error: 'Неверный код' });
+  }
+});
+
+app.post('/api/reset-password', (req, res) => {
+  const { email, newPassword } = req.body;
+  const user = usersDB[email];
+  if (user) {
+    user.password = newPassword;
+    delete user.recoveryCode;
+    delete user.recoveryExpires;
+    saveUsers(usersDB);
+    res.json({ success: true });
+  } else {
+    res.status(400).json({ error: 'Пользователь не найден' });
+  }
+});
+
+app.get('/api/users', (req, res) => {
+  const excludeId = req.query.exclude;
+  const users = Object.values(usersDB).map(u => ({
+    id: u.id, name: u.name, username: u.username,
+    avatar: u.avatar, online: u.online, lastSeen: u.lastSeen
+  })).filter(u => !excludeId || u.id !== excludeId);
+  res.json(users);
+});
+
+app.get('/api/chats/:userId', (req, res) => {
+  const userId = req.params.userId;
+  const chats = [];
+  for (let chatId in privateChats) {
+    if (chatId.includes(userId)) {
+      const messages = privateChats[chatId];
+      const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+      const participants = chatId.split('_');
+      const otherId = participants.find(id => id !== userId);
+      const otherUser = Object.values(usersDB).find(u => u.id === otherId);
+      if (otherUser) {
+        chats.push({
+          chatId,
+          userId: otherUser.id,
+          name: otherUser.name,
+          avatar: otherUser.avatar,
+          online: otherUser.online,
+          lastMessage: lastMsg ? { text: lastMsg.text, time: lastMsg.time, from: lastMsg.from } : null,
+          unread: messages.filter(m => m.to === userId && !m.read).length
+        });
+      }
+    }
+  }
+  chats.sort((a, b) => {
+    const timeA = a.lastMessage ? new Date(a.lastMessage.time) : 0;
+    const timeB = b.lastMessage ? new Date(b.lastMessage.time) : 0;
+    return timeB - timeA;
+  });
+  res.json(chats);
+});
+
+app.get('/api/messages/:userId/:otherId', (req, res) => {
+  const { userId, otherId } = req.params;
+  const chatId = [userId, otherId].sort().join('_');
+  const messages = privateChats[chatId] || [];
+  if (privateChats[chatId]) {
+    privateChats[chatId].forEach(msg => {
+      if (msg.to === userId) msg.read = true;
+    });
+    saveChats(privateChats);
+  }
+  res.json(messages);
+});
+
+// ==================== SOCKET.IO ====================
+io.on('connection', (socket) => {
+  console.log('🔌 Пользователь подключился:', socket.id);
+
+  socket.on('join', (userId) => {
+    socket.join(userId);
+    socket.userId = userId;
+    onlineUsers.set(userId, socket.id);
+
+    for (let email in usersDB) {
+      if (usersDB[email].id === userId) {
+        usersDB[email].online = true;
+        usersDB[email].lastSeen = new Date().toISOString();
+        saveUsers(usersDB);
+        break;
+      }
+    }
+
+    io.emit('userOnline', userId);
+  });
+
+  socket.on('message', (data) => {
+    if (!checkRate(data.from)) {
+      socket.emit('error', 'Rate limit exceeded');
+      return;
+    }
+
+    const chatId = [data.from, data.to].sort().join('_');
+    if (!privateChats[chatId]) privateChats[chatId] = [];
+
+    const message = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      from: data.from,
+      to: data.to,
+      text: data.text,
+      time: new Date().toISOString(),
+      read: false,
+      edited: false
+    };
+
+    privateChats[chatId].push(message);
+    saveChats(privateChats);
+
+    io.to(data.from).to(data.to).emit('newMessage', { chatId, message });
+  });
+
+  socket.on('typing', (data) => {
+    socket.to(data.to).emit('typing', { from: data.from });
+  });
+
+  socket.on('disconnect', () => {
+    if (socket.userId) {
+      onlineUsers.delete(socket.userId);
+
+      for (let email in usersDB) {
+        if (usersDB[email].id === socket.userId) {
+          usersDB[email].online = false;
+          usersDB[email].lastSeen = new Date().toISOString();
+          saveUsers(usersDB);
+          break;
+        }
+      }
+
+      io.emit('userOffline', socket.userId);
+    }
+    console.log('🔌 Пользователь отключился:', socket.id);
+  });
+});
+
+// ==================== ГЛАВНАЯ СТРАНИЦА ====================
+app.get('/', (req, res) => {
+  res.sendFile(indexPath);
 });
 
 // ==================== ЗАПУСК СЕРВЕРА ====================
