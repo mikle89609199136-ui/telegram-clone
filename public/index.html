@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Telegram</title>
+    <style>body{font-family:system-ui;background:#0088cc;color:white;margin:0;height:100vh;display:flex;align-items:center;justify-content:center}#app{max-width:400px;width:90%;text-align:center}h1{font-size:2em;margin-bottom:30px;background:linear-gradient(45deg,#fff,#00c4b4);-webkit-background-clip:text;-webkit-text-fill-color:transparent}input,button{width:100%;padding:15px;margin:10px 0;border:none;border-radius:25px;font-size:16px;box-sizing:border-box}button{background:#0088cc;color:white;cursor:pointer}#chat{display:none;flex-direction:column;height:70vh}#messages{flex:1;overflow-y:auto;background:#f0f2f5;color:black;padding:20px;border-radius:15px;margin:10px 0}.msg{margin:10px 0;padding:12px;background:white;border-radius:18px;max-width:80%;word-wrap:break-word}</style>
+</head>
+<body>
+    <div id="app">
+        <div id="login">
+            <h1>🚀 My Telegram</h1>
+            <input id="email" placeholder="Почта" type="email">
+            <button onclick="sendCode()">Отправить код</button>
+            <input id="code" placeholder="123456" type="text">
+            <button onclick="verifyCode()">Войти</button>
+        </div>
+        <div id="chat">
+            <div id="messages"></div>
+            <input id="msg" placeholder="Сообщение...">
+            <button onclick="sendMsg()">Отправить</button>
+        </div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let userId = null;
+        
+        async function sendCode() {
+            await fetch('/send-code', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value})});
+            alert('Код: 123456 (смотри в терминале)');
+        }
+        
+        async function verifyCode() {
+            const res = await fetch('/verify-code', {
+                method:'POST',headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({code:document.getElementById('code').value})
+            });
+            const data = await res.json();
+            if (data.success) {
+                userId = data.userId;
+                document.getElementById('login').style.display = 'none';
+                document.getElementById('chat').style.display = 'flex';
+                socket.emit('join', userId);
+            }
+        }
+        
+        function sendMsg() {
+            const text = document.getElementById('msg').value;
+            if (text) {
+                socket.emit('message', {toUserId:'all', text});
+                document.getElementById('msg').value = '';
+            }
+        }
+        
+        socket.on('new-message', (msg) => {
+            const div = document.getElementById('messages');
+            div.innerHTML += `<div class="msg"><strong>${msg.from.slice(-4)}:</strong> ${msg.text} <small>${msg.time}</small></div>`;
+            div.scrollTop = div.scrollHeight;
+        });
+        
+        document.addEventListener('keypress', e => {if(e.key==='Enter') e.target.id==='msg'?sendMsg():verifyCode()});
+    </script>
+</body>
+</html>
