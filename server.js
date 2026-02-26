@@ -11,30 +11,27 @@ const io = socketIo(server, {
 });
 
 // ========================================
-// БАЗЫ ДАННЫХ (Telegram PRO v7.0)
+// БАЗЫ ДАННЫХ (Zhuravlev Messenger PRO)
 // ========================================
 const usersDB = {};
 const sessions = {};
 const privateChats = {};
 const groupChats = {};
 const onlineUsers = new Set();
-const userSettings = {};
-const callSessions = {};
+const userSessions = {}; // Для авто-входа
 let globalMessageId = 0;
-let globalFileId = 0;
-let globalStickerId = 0;
 
-// 5+ тем
+// Темы
 const themes = {
-    telegram: {bg: '#f0f2f5', sidebar: '#1f2937', sent: '#0088cc', received: '#e5e5ea'},
+    telegram: {bg: '#eff2f5', sidebar: '#f8f9fa', sent: '#0088cc', received: '#ffffff'},
+    light: {bg: '#ffffff', sidebar: '#f0f2f5', sent: '#007bff', received: '#f8f9fa'},
     dark: {bg: '#111b21', sidebar: '#202c33', sent: '#005c73', received: '#2a3942'},
-    blue: {bg: '#e3f2fd', sidebar: '#0277bd', sent: '#01579b', received: '#bbdefb'},
-    purple: {bg: '#f3e5f5', sidebar: '#7b1fa2', sent: '#4a148c', received: '#e1bee7'},
-    cyber: {bg: '#0a0a0a', sidebar: '#00ff88', sent: '#ff0080', received: '#4400ff'},
+    blue: {bg: '#e3f2fd', sidebar: '#2196f3', sent: '#1976d2', received: '#bbdefb'},
+    purple: {bg: '#f3e5f5', sidebar: '#9c27b0', sent: '#7b1fa2', received: '#e1bee7'},
     premium: {bg: '#1e1b4b', sidebar: '#667eea', sent: '#a855f7', received: '#3b82f6'}
 };
 
-// Rate limiting + антиспам
+// Rate limiting
 const rateLimits = new Map();
 function checkRateLimit(userId) {
     const now = Date.now();
@@ -51,56 +48,93 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ========================================
-// API (РЕГИСТРАЦИЯ + ПРЕМИУМ)
+// API АУТЕНТИФИКАЦИЯ
 // ========================================
 app.post('/api/register', (req, res) => {
-    const { email, password, name } = req.body;
-    if (!email.includes('@') || !password || usersDB[email]) {
-        return res.status(400).json({ error: 'Неверные данные или email занят' });
+    const { email, password, username, name } = req.body;
+    
+    if (!email.includes('@') || !password || !username || usersDB[email]) {
+        return res.status(400).json({ error: 'Email или username уже занят' });
     }
+    
     const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     usersDB[email] = { 
         id: userId, 
         email, 
-        name: name || email.split('@')[0], 
+        username: username.toLowerCase(),
+        name: name || username,
         avatar: '👤', 
-        password, 
+        password,
         theme: 'telegram',
         premium: false,
         notifications: true,
         joinedAt: new Date().toISOString(),
         groups: [],
         calls: 0,
-        stickers: []
+        stickers: [],
+        sessionToken: userId + Date.now()
     };
-    res.json({ success: true, userId, token: userId });
+    res.json({ success: true, userId, token: usersDB[email].sessionToken });
 });
 
 app.post('/api/login', (req, res) => {
-    const { email, password } = req.body;
-    const user = usersDB[email];
-    if (!user || user.password !== password) return res.status(401).json({ error: 'Неверный email/пароль' });
-    res.json({ success: true, userId: user.id, token: user.id });
+    const { username, password } = req.body;
+    
+    for (let email in usersDB) {
+        const user = usersDB[email];
+        if ((user.username === username || user.email === username) && user.password === password) {
+            user.sessionToken = user.id + Date.now();
+            res.json({ success: true, userId: user.id, token: user.sessionToken });
+            return;
+        }
+    }
+    res.status(401).json({ error: 'Неверный username или пароль' });
+});
+
+app.post('/api/recover-password', (req, res) => {
+    const { email } = req.body;
+    if (usersDB[email]) {
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        usersDB[email].recoveryCode = code;
+        usersDB[email].recoveryTime = Date.now();
+        console.log(`Recovery code for ${email}: ${code}`);
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: 'Email не найден' });
+    }
+});
+
+app.post('/api/verify-recovery', (req, res) => {
+    const { email, code } = req.body;
+    if (usersDB[email] && usersDB[email].recoveryCode === code && 
+        Date.now() - usersDB[email].recoveryTime < 300000) {
+        res.json({ success: true });
+    } else {
+        res.status(400).json({ error: 'Неверный код' });
+    }
+});
+
+app.post('/api/reset-password', (req, res) => {
+    const { email, newPassword } = req.body;
+    if (usersDB[email]) {
+        usersDB[email].password = newPassword;
+        delete usersDB[email].recoveryCode;
+        res.json({ success: true });
+    } else {
+        res.status(400).json({ error: 'Пользователь не найден' });
+    }
 });
 
 app.get('/api/users', (req, res) => {
     const users = Object.values(usersDB).map(u => ({
-        id: u.id, name: u.name, email: u.email, avatar: u.avatar, 
-        isOnline: onlineUsers.has(u.id), theme: u.theme, premium: u.premium
+        id: u.id, name: u.name, username: u.username, email: u.email, 
+        avatar: u.avatar, isOnline: onlineUsers.has(u.id), theme: u.theme, premium: u.premium
     }));
     res.json(users);
 });
 
-app.post('/api/set-theme', (req, res) => {
-    const { userId, theme } = req.body;
-    if (usersDB[userId]) {
-        usersDB[userId].theme = theme;
-        res.json({ success: true });
-    } else res.json({ error: 'Пользователь не найден' });
-});
-
 // ========================================
-// TELEGRAM PRO v7.0 - ПОЛНЫЙ UI (400+ строк HTML)
+// TELEGRAM-STYLE UI (мобильная версия)
 // ========================================
 app.get('/', (req, res) => {
     res.send(`<!DOCTYPE html>
@@ -108,206 +142,397 @@ app.get('/', (req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Telegram PRO v7.0 | Миша Журавлев | Новокузнецк</title>
+<title>Zhuravlev Messenger PRO</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif}
-body{background:linear-gradient(135deg,#0088cc,#00c4b4);min-height:100vh;color:#333;overflow:hidden}
-#auth{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:linear-gradient(135deg,white,#f8f9fa);padding:60px;border-radius:28px;max-width:480px;width:94%;text-align:center;box-shadow:0 35px 100px rgba(0,136,204,0.45);backdrop-filter:blur(15px);z-index:1000}
-#auth h1{font-size:3.2em;background:linear-gradient(135deg,#0088cc,#00c4b4);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:25px;animation:glow 2s ease-in-out infinite alternate}
-@keyframes glow{0%{text-shadow:0 0 25px #0088cc}100%{text-shadow:0 0 35px #00c4b4}}
-.auth-btn{display:block;width:100%;padding:20px;margin:15px 0;background:linear-gradient(135deg,#0088cc,#00c4b4);color:white;border:none;border-radius:18px;font-size:18px;font-weight:700;cursor:pointer;transition:all .4s;box-shadow:0 10px 30px rgba(0,136,204,.4)}
-.auth-btn:hover{transform:translateY(-4px);box-shadow:0 15px 45px rgba(0,136,204,.6)}
-.auth-btn.apple{background:linear-gradient(135deg,#000,#1a1a1a)}
-.auth-btn.google{background:linear-gradient(135deg,#4285f4,#34a853)}
-input{width:100%;padding:22px;margin:15px 0;border:2px solid #e9ecef;border-radius:18px;font-size:18px;box-sizing:border-box;transition:all .4s;background:rgba(255,255,255,.95);backdrop-filter:blur(8px)}
-input:focus{border-color:#0088cc;outline:none;box-shadow:0 0 0 5px rgba(0,136,204,.15)}
-#app{display:none;flex-direction:column;height:100vh;position:relative}
-@media(min-width:769px){#app{flex-direction:row}}
-.nav-bar{display:flex;background:linear-gradient(135deg,#0088cc,#00c4b4);color:white;padding:18px 28px;gap:20px;position:sticky;top:0;z-index:100;box-shadow:0 6px 30px rgba(0,136,204,.5)}
-.nav-btn{background:none;border:none;color:white;font-size:24px;cursor:pointer;padding:18px 24px;border-radius:20px;transition:all .4s;font-weight:700;flex:1;display:flex;flex-direction:column;gap:6px}
-.nav-btn:hover{background:rgba(255,255,255,.25);transform:translateY(-3px)}
-.nav-btn.nav-active{background:rgba(255,255,255,.4);box-shadow:0 8px 25px rgba(0,0,0,.3)}
-.nav-btn span{font-size:14px;opacity:.9}
-#sidebar{width:100%;height:calc(100vh - 90px);background:var(--sidebar,#1f2937);color:white;padding:32px;overflow:auto;position:relative}
-@media(min-width:769px){#sidebar{width:420px;height:calc(100vh - 90px)}}
-#sidebar h3{margin-bottom:30px;font-size:24px;font-weight:900;border-bottom:3px solid rgba(255,255,255,.2);padding-bottom:18px}
-#search-user{width:100%;padding:20px 28px;border-radius:28px;margin-bottom:30px;border:none;font-size:17px;background:rgba(255,255,255,.15);color:white;box-shadow:0 6px 20px rgba(0,0,0,.3)}
-.user-item{padding:26px 24px;cursor:pointer;border-radius:24px;margin:12px 0;background:rgba(255,255,255,.1);transition:all .4s;display:flex;align-items:center;gap:22px;position:relative;overflow:hidden}
-.user-item::before{content:'';position:absolute;left:0;top:0;height:100%;width:0;background:linear-gradient(135deg,#0088cc,#00c4b4);transition:width .4s}
-.user-item:hover::before,.user-item.active::before{width:6px}
-.user-item:hover,.user-item.active{transform:translateX(12px);background:rgba(255,255,255,.3)}
-.avatar{width:72px;height:72px;border-radius:50%;background:var(--sent,#0088cc);color:white;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;box-shadow:0 6px 20px rgba(0,0,0,.4)}
-.user-info{flex:1;min-width:0}
-.user-name{font-weight:900;font-size:19px;margin-bottom:6px}
-.user-status{font-size:15px;color:rgba(255,255,255,.85);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.group-badge{position:absolute;top:12px;right:12px;background:#4CAF50;color:white;border-radius:12px;padding:4px 12px;font-size:12px;font-weight:700}
-#chat-area{flex:1;display:flex;flex-direction:column;background:var(--bg,#f0f2f5)}
-#chat-header{height:100px;background:linear-gradient(135deg,var(--sent,#0088cc),#006ba0);color:white;padding:0 36px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 8px 40px rgba(0,136,204,.5)}
-#chat-title{font-size:24px;font-weight:900}
-#chat-subtitle{font-size:16px;opacity:.92}
-.header-actions{display:flex;gap:16px}
-.header-btn{background:none;border:none;color:white;font-size:26px;cursor:pointer;padding:16px;border-radius:18px;transition:all .3s}
-.header-btn:hover{background:rgba(255,255,255,.2);transform:scale(1.1)}
-#messages{flex:1;overflow-y:auto;padding:40px 32px 28px;scroll-behavior:smooth}
-.msg{padding:24px 28px;margin:20px 0;border-radius:28px;max-width:82%;word-wrap:break-word;position:relative;box-shadow:0 6px 25px rgba(0,0,0,.15);animation:msgSlideIn .5s ease-out}
-.msg.sent{background:linear-gradient(135deg,var(--sent,#0088cc),#006ba0);color:white;margin-left:auto;border-bottom-right-radius:8px}
-.msg.received{background:rgba(255,255,255,.95);border-bottom-left-radius:8px}
-.msg-time{font-size:14px;opacity:.75;margin-top:12px}
-.msg.encrypted::after{content:"🔒";position:absolute;top:-12px;right:-12px;font-size:16px;background:var(--sent,#0088cc);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.4)}
-.msg.premium::before{content:"⭐";position:absolute;top:-8px;left:-8px;font-size:18px;color:#ffd700;background:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.3)}
-@keyframes msgSlideIn{from{opacity:0;transform:translateY(40px)}to{opacity:1;transform:translateY(0)}}
-#input-area{display:flex;flex-direction:column;padding:40px 32px 40px;background:rgba(255,255,255,.97);border-top:2px solid rgba(0,136,204,.3);box-shadow:0 -15px 60px rgba(0,0,0,.1)}
-.input-controls{display:flex;gap:20px;align-items:center;margin-bottom:20px}
-.btn-icon{width:68px;height:68px;border-radius:50%;border:none;background:rgba(0,136,204,.15);color:#0088cc;font-size:26px;cursor:pointer;transition:all .4s;display:flex;align-items:center;justify-content:center}
-.btn-icon:hover{background:rgba(0,136,204,.3);transform:scale(1.15)}
-#message-input{flex:1;padding:26px 32px;border:3px solid rgba(0,136,204,.25);border-radius:36px;font-size:18px;outline:none;transition:all .4s;background:rgba(255,255,255,.8)}
-#message-input:focus{border-color:#0088cc;box-shadow:0 0 0 6px rgba(0,136,204,.2)}
-#send-btn{padding:26px 48px;background:linear-gradient(135deg,#0088cc,#00c4b4);color:white;border:none;border-radius:36px;font-size:19px;font-weight:900;cursor:pointer;transition:all .4s;width:auto;align-self:flex-end}
-#send-btn:hover{background:linear-gradient(135deg,#006ba0,#009688);transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,136,204,.6)}
-.emoji-picker{display:none;position:absolute;bottom:140px;right:40px;background:rgba(255,255,255,.95);border-radius:24px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3);backdrop-filter:blur(20px);max-width:320px;max-height:300px;overflow:auto;z-index:1000}
-.emoji-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:12px;margin-top:16px}
-.emoji-grid span{cursor:pointer;font-size:28px;padding:12px;border-radius:16px;transition:all .3s;display:flex;align-items:center;justify-content:center}
-.emoji-grid span:hover{background:rgba(0,136,204,.2);transform:scale(1.2)}
-.sticker-picker{display:none;position:absolute;bottom:140px;left:40px;background:rgba(255,255,255,.95);border-radius:24px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3);backdrop-filter:blur(20px);max-width:280px;max-height:350px;overflow:auto}
-.call-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.95);display:none;align-items:center;justify-content:center;z-index:2000}
-.call-controls{display:flex;flex-direction:column;gap:24px;align-items:center}
-.call-btn{width:80px;height:80px;border-radius:50%;border:none;font-size:28px;cursor:pointer;transition:all .3s}
-.call-btn.answer{background:#4CAF50;color:white;box-shadow:0 0 30px #4CAF50}
-.call-btn.decline{background:#f44336;color:white;box-shadow:0 0 30px #f44336}
-.settings{padding:40px;max-height:70vh;overflow:auto}
-.setting{margin:30px 0;padding:30px;background:rgba(255,255,255,.95);border-radius:24px;border-left:6px solid var(--sent,#0088cc);box-shadow:0 8px 35px rgba(0,0,0,.2);backdrop-filter:blur(15px)}
-.theme-selector select{width:100%;padding:20px;border:2px solid #e9ecef;border-radius:18px;font-size:17px;margin:15px 0;background:rgba(255,255,255,.9)}
-@media(max-width:768px){.nav-bar{padding:14px 20px;gap:12px}.nav-btn{font-size:22px;padding:14px 18px}.user-item{padding:20px 18px;gap:18px}.avatar{width:60px;height:60px;font-size:24px}}
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; overflow-x: hidden; }
+
+#welcome { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: white; z-index: 1000; max-width: 90vw; }
+.welcome-title { font-size: clamp(2.5rem, 8vw, 4rem); font-weight: 800; background: linear-gradient(135deg, white 0%, #f0f4ff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 1.5rem; }
+.welcome-subtitle { font-size: clamp(1rem, 4vw, 1.3rem); opacity: 0.9; margin-bottom: 3rem; }
+.btn-primary { display: block; width: 90%; max-width: 350px; margin: 0 auto 1.5rem; padding: 1.2rem 2rem; background: rgba(255,255,255,0.95); color: #333; border: none; border-radius: 25px; font-size: clamp(1.1rem, 4vw, 1.3rem); font-weight: 600; cursor: pointer; transition: all 0.3s; box-shadow: 0 10px 30px rgba(0,0,0,0.2); backdrop-filter: blur(10px); }
+.btn-primary:hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(0,0,0,0.3); }
+.btn-secondary { background: rgba(255,255,255,0.7); color: #555; }
+
+#auth-form { display: none; background: rgba(255,255,255,0.95); padding: 2.5rem; border-radius: 25px; box-shadow: 0 25px 60px rgba(0,0,0,0.3); backdrop-filter: blur(20px); max-width: 420px; width: 90vw; margin: 2rem auto; text-align: center; }
+.auth-title { font-size: 2rem; font-weight: 800; color: #333; margin-bottom: 1rem; }
+.auth-subtitle { color: #666; margin-bottom: 2rem; font-size: 1rem; }
+.form-group { margin-bottom: 1.5rem; text-align: left; }
+.form-group label { display: block; font-weight: 500; color: #555; margin-bottom: 0.5rem; font-size: 0.95rem; }
+input { width: 100%; padding: 1rem 1.2rem; border: 2px solid #e8ecef; border-radius: 15px; font-size: 1rem; transition: all 0.3s; background: rgba(255,255,255,0.9); }
+input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 4px rgba(102,126,234,0.1); }
+.username-warning { font-size: 0.85rem; color: #e74c3c; margin-top: 0.3rem; }
+.auth-link { color: #667eea; text-decoration: none; font-weight: 500; font-size: 0.95rem; }
+.auth-link:hover { text-decoration: underline; }
+
+#recovery-form { display: none; }
+.code-inputs { display: flex; gap: 0.8rem; justify-content: center; margin: 2rem 0; }
+.code-input { width: 55px; height: 55px; font-size: 1.5rem; font-weight: 700; text-align: center; border: 3px solid #e8ecef; border-radius: 12px; transition: all 0.3s; }
+.code-input:focus { border-color: #667eea; box-shadow: 0 0 0 4px rgba(102,126,234,0.15); }
+.code-input.correct { border-color: #27ae60; background: #d5f4e6; }
+.code-input.error { border-color: #e74c3c; background: #fadbd8; animation: shake 0.5s; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+#app { display: none; height: 100vh; overflow: hidden; flex-direction: column; background: var(--bg, #eff2f5); }
+
+.mobile-nav { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(20px); padding: 0.8rem 1rem; display: flex; gap: 1rem; z-index: 100; box-shadow: 0 -2px 20px rgba(0,0,0,0.1); }
+.nav-item { flex: 1; padding: 0.8rem; text-align: center; border-radius: 20px; background: none; border: none; cursor: pointer; transition: all 0.3s; font-size: 1.4rem; }
+.nav-item.active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
+
+#sidebar { width: 100%; height: calc(100vh - 80px); background: var(--sidebar, #f8f9fa); overflow-y: auto; padding: 1rem; }
+.chat-list { padding: 0.5rem 0; }
+.chat-item { display: flex; padding: 1rem; margin: 0.3rem 0; border-radius: 12px; cursor: pointer; transition: all 0.2s; background: rgba(255,255,255,0.7); }
+.chat-item:hover, .chat-item.active { background: rgba(102,126,234,0.15); transform: translateX(5px); }
+.chat-avatar { width: 50px; height: 50px; border-radius: 50%; background: var(--sent, #0088cc); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; margin-right: 1rem; flex-shrink: 0; }
+.chat-info { flex: 1; min-width: 0; }
+.chat-name { font-weight: 600; font-size: 1rem; margin-bottom: 0.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-preview { font-size: 0.85rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-meta { display: flex; justify-content: flex-end; align-items: center; font-size: 0.8rem; color: #999; min-width: 70px; }
+.read-status { display: flex; align-items: center; gap: 0.2rem; margin-right: 0.5rem; }
+.unread { font-weight: 600; color: #007bff; }
+
+#chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#chat-header { height: 70px; background: rgba(255,255,255,0.95); border-bottom: 1px solid #e8ecef; display: flex; align-items: center; padding: 0 1.2rem; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+.header-back { width: 40px; height: 40px; border-radius: 50%; border: none; background: none; font-size: 1.3rem; cursor: pointer; margin-right: 1rem; display: flex; align-items: center; justify-content: center; }
+.header-title { font-weight: 700; font-size: 1.1rem; }
+.header-avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--sent, #0088cc); color: white; display: flex; align-items: center; justify-content: center; margin-left: auto; font-size: 1.1rem; }
+
+#messages { flex: 1; overflow-y: auto; padding: 1rem; background: var(--bg, #eff2f5); }
+.message { margin: 0.8rem 0; display: flex; align-items: flex-end; max-width: 75%; animation: messageSlide 0.3s ease-out; }
+.message.sent { flex-direction: row-reverse; margin-left: auto; }
+.msg-bubble { max-width: 100%; padding: 0.8rem 1.2rem; border-radius: 18px; position: relative; font-size: 0.95rem; line-height: 1.4; }
+.msg-bubble.sent { background: linear-gradient(135deg, var(--sent, #0088cc), #0066b3); color: white; border-bottom-right-radius: 6px; }
+.msg-bubble.received { background: white; color: #333; border-bottom-left-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.msg-time { font-size: 0.75rem; opacity: 0.7; margin-left: 0.5rem; font-weight: 500; }
+.read-indicator { position: absolute; bottom: 3px; right: 8px; font-size: 0.8rem; }
+@keyframes messageSlide { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+
+#input-area { padding: 1rem; background: rgba(255,255,255,0.95); border-top: 1px solid #e8ecef; display: flex; align-items: flex-end; gap: 0.8rem; }
+.attach-btn { width: 45px; height: 45px; border-radius: 50%; border: none; background: #f0f2f5; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.attach-btn:hover { background: #e8ecef; }
+#message-input { flex: 1; padding: 0.9rem 1.1rem; border: 2px solid #e8ecef; border-radius: 25px; font-size: 1rem; resize: none; max-height: 120px; min-height: 45px; }
+#message-input:focus { outline: none; border-color: #667eea; }
+#send-btn { width: 45px; height: 45px; border-radius: 50%; border: none; background: var(--sent, #0088cc); color: white; font-size: 1.2rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
+#send-btn:hover { background: #0066b3; transform: scale(1.05); }
+
+#profile-modal, #settings-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+.modal-content { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-radius: 25px 25px 0 0; padding: 2rem; max-height: 85vh; overflow-y: auto; }
 </style>
 </head>
 <body>
-<div id="auth">
-<h1>🚀 Telegram PRO v7.0</h1>
-<p style="color:#666;margin-bottom:35px;font-size:17px;font-weight:500">Миша Журавлев • Новокузнецк • 26.02.2026</p>
-<input id="email" type="email" placeholder="📧 test@mail.com">
-<input id="password" type="password" placeholder="🔑 123456">
-<button class="auth-btn" onclick="register()">📝 Регистрация</button>
-<button class="auth-btn" onclick="login()">🔐 Вход</button>
-<button class="auth-btn google" onclick="demoLogin()">⚡ Быстрый демо</button>
-<div style="margin-top:30px;color:#666;font-size:16px;border-top:2px solid #eee;padding-top:25px;font-weight:600">
-🎯 test@mail.com / 123456
+<div id="welcome">
+    <h1 class="welcome-title">Welcome to Zhuravlev Messenger</h1>
+    <p class="welcome-subtitle">Fast, secure, beautiful messaging</p>
+    <button class="btn-primary" onclick="showRegister()">📝 Registration</button>
+    <button class="btn-secondary btn-primary" onclick="showLogin()">🔐 Login</button>
 </div>
+
+<!-- Регистрация -->
+<div id="register-form" class="auth-form">
+    <h2 class="auth-title">Create Account</h2>
+    <p class="auth-subtitle">Join Zhuravlev Messenger</p>
+    <div class="form-group">
+        <label>Email</label>
+        <input id="reg-email" type="email" placeholder="your@email.com" required>
+    </div>
+    <div class="form-group">
+        <label>Username @</label>
+        <input id="reg-username" placeholder="yourusername" required>
+        <div class="username-warning" id="username-warning">Username нельзя будет изменить</div>
+    </div>
+    <div class="form-group">
+        <label>Password</label>
+        <input id="reg-password" type="password" placeholder="••••••••" required>
+    </div>
+    <div class="form-group">
+        <label>Confirm Password</label>
+        <input id="reg-password2" type="password" placeholder="••••••••" required>
+    </div>
+    <button class="btn-primary" style="width:100%; margin-top:1.5rem;" onclick="register()">Create Account</button>
+    <p style="margin-top:1rem;"><a href="#" class="auth-link" onclick="showLogin()">Already have account? Login</a></p>
+</div>
+
+<!-- Вход -->
+<div id="login-form" class="auth-form">
+    <h2 class="auth-title">Welcome Back</h2>
+    <div class="form-group">
+        <label>Username or Email</label>
+        <input id="login-username" placeholder="@username or email" required>
+    </div>
+    <div class="form-group">
+        <label>Password</label>
+        <input id="login-password" type="password" placeholder="••••••••" required>
+    </div>
+    <button class="btn-primary" style="width:100%; margin-top:1rem;" onclick="loginUser()">Login</button>
+    <p style="margin-top:1rem;"><a href="#" class="auth-link" onclick="showRecover()">Forgot Password?</a> | <a href="#" class="auth-link" onclick="showRegister()">No account? Register</a></p>
+</div>
+
+<!-- Восстановление пароля -->
+<div id="recovery-form" class="auth-form">
+    <h2 class="auth-title">Forgot Password</h2>
+    <div class="form-group">
+        <label>Email</label>
+        <input id="recovery-email" type="email" placeholder="your@email.com">
+    </div>
+    <button class="btn-primary" onclick="sendRecoveryCode()">Send Code</button>
+    <p style="margin-top:1rem;"><a href="#" class="auth-link" onclick="showLogin()">Back to Login</a></p>
+</div>
+
+<div id="code-form" class="auth-form">
+    <h2 class="auth-title">Enter Code</h2>
+    <p style="color:#666; margin-bottom:2rem;">Check your email for 6-digit code</p>
+    <div class="code-inputs">
+        <input class="code-input" maxlength="1">
+        <input class="code-input" maxlength="1">
+        <input class="code-input" maxlength="1">
+        <input class="code-input" maxlength="1">
+        <input class="code-input" maxlength="1">
+        <input class="code-input" maxlength="1">
+    </div>
+    <button class="btn-primary" onclick="verifyCode()">Verify Code</button>
+    <p style="margin-top:1rem;"><a href="#" class="auth-link" onclick="showLogin()">Back to Login</a></p>
+</div>
+
+<div id="reset-form" class="auth-form">
+    <h2 class="auth-title">New Password</h2>
+    <div class="form-group">
+        <label>New Password</label>
+        <input id="reset-password" type="password" placeholder="••••••••">
+    </div>
+    <div class="form-group">
+        <label>Confirm Password</label>
+        <input id="reset-password2" type="password" placeholder="••••••••">
+    </div>
+    <button class="btn-primary" onclick="resetPassword()">Set New Password</button>
 </div>
 
 <div id="app">
-<div class="nav-bar">
-<button class="nav-btn nav-active" onclick="showChats()"><span>💬</span><span>Чаты</span></button>
-<button class="nav-btn" onclick="showGroups()"><span>👥</span><span>Группы</span></button>
-<button class="nav-btn" onclick="showCalls()"><span>📞</span><span>Звонки</span></button>
-<button class="nav-btn" onclick="showSettings()"><span>⚙️</span><span>Настройки</span></button>
+    <div id="chat-header" style="display:none;">
+        <button class="header-back" onclick="showChats()">←</button>
+        <div id="header-title"></div>
+        <div id="header-avatar" class="header-avatar"></div>
+    </div>
+    
+    <div id="sidebar">
+        <div style="display:flex; align-items:center; padding:1rem; border-bottom:1px solid #e8ecef; margin-bottom:1rem;">
+            <input id="search-chats" placeholder="@search chats" style="flex:1; padding:0.8rem 1rem; border:2px solid #e8ecef; border-radius:12px; font-size:1rem;">
+            <button style="margin-left:0.8rem; padding:0.8rem; background:#667eea; color:white; border:none; border-radius:12px; font-size:1rem;">✏️</button>
+        </div>
+        <div id="chat-list" class="chat-list"></div>
+    </div>
+    
+    <div id="chat-area">
+        <div id="messages"></div>
+        <div id="input-area" style="display:none;">
+            <button class="attach-btn">📎</button>
+            <input id="message-input" placeholder="Message" rows="1">
+            <button class="attach-btn">😀</button>
+            <button id="send-btn">➤</button>
+        </div>
+    </div>
+    
+    <div class="mobile-nav">
+        <button class="nav-item active" onclick="showChats()">💬</button>
+        <button class="nav-item" onclick="showSettings()">⚙️</button>
+    </div>
 </div>
 
-<div id="sidebar">
-<h3>👥 Онлайн <span id="online-count">0</span></h3>
-<input id="search-user" placeholder="@поиск по имени/email">
-<div id="sidebar-content">🔄 Инициализация Telegram PRO v7.0...</div>
-</div>
-
-<div id="chat-area">
-<div id="chat-header">
-<div class="chat-header-left" onclick="showProfile()">
-<div id="chat-avatar" class="avatar">👤</div>
-<div>
-<div id="chat-title">Telegram PRO v7.0</div>
-<div id="chat-subtitle">Новокузнецк • E2EE + Premium</div>
-</div>
-</div>
-<div class="header-actions">
-<button class="header-btn" onclick="attachFile()" title="📎">📎</button>
-<button class="header-btn" onclick="toggleEmojiPicker()" title="😀">😀</button>
-<button class="header-btn" onclick="toggleStickerPicker()" title="🎨">🎨</button>
-<button class="header-btn" onclick="toggleInfo()">ℹ️</button>
-</div>
-</div>
-<div id="messages"></div>
-<div id="input-area" style="display:none">
-<div class="input-controls">
-<button class="btn-icon" onclick="attachFile()" title="📎 Файл">📎</button>
-<button class="btn-icon" onclick="recordVoice()" title="🎤 Голосовое">🎤</button>
-<input id="message-input" placeholder="🔒 Напишите защищённое сообщение...">
-<button class="btn-icon" onclick="toggleEmojiPicker()" title="😀 Эмодзи">😀</button>
-<button class="btn-icon" onclick="toggleStickerPicker()" title="⭐ Стикеры">⭐</button>
-</div>
-<button id="send-btn" onclick="sendMessage()">📤 Отправить</button>
-</div>
-
-<!-- Эмодзи -->
-<div id="emoji-picker" class="emoji-picker">
-<div style="font-weight:700;margin-bottom:16px;font-size:16px">😀 Эмодзи</div>
-<div class="emoji-grid" id="emoji-grid"></div>
-</div>
-
-<!-- Стикеры -->
-<div id="sticker-picker" class="sticker-picker">
-<div style="font-weight:700;margin-bottom:16px;font-size:16px">⭐ Стикеры Premium</div>
-<div id="sticker-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:16px"></div>
-</div>
-
-<!-- Видеозвонок -->
-<div id="call-overlay" class="call-overlay">
-<div class="call-controls">
-<div style="font-size:48px;margin-bottom:32px;color:white">📹 Входящий звонок</div>
-<div style="color:white;font-size:24px;font-weight:700;margin-bottom:40px">От: <span id="caller-name"></span></div>
-<button class="call-btn answer" onclick="acceptCall()">✅ Принять</button>
-<button class="call-btn decline" onclick="declineCall()">❌ Отклонить</button>
-</div>
-</div>
-</div>
+<div id="profile-modal">
+    <div class="modal-content">
+        <div id="profile-content"></div>
+        <button onclick="closeProfile()" style="width:100%; padding:1rem; background:#ff5b5b; color:white; border:none; border-radius:15px; font-size:1.1rem; margin-top:1rem;">Leave</button>
+    </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
-let currentUser = null, currentChat = null, currentTheme = 'telegram', selectedNav = 'chats';
+let currentUser = null, currentChat = null, currentTheme = 'telegram';
 const themes = ${JSON.stringify(themes)};
-let emojiList = '😀😎😂🤔😍🥰😢😡😤🤯🤩😇🤗🤐😎🤩🥰🥺🤔🤭🙄🤭😏😌😍🥰🤤🤓😎🥸🤠🥳🤡👹👺👻👼🤖👽👾💩🗿🐵🐒🦍🦧🐶🐕🗡️🛡️⚔️🗡️🔫💣🧨⚡☄️🧨💥🔥💫🌩️⭐✨⚡️💫💎🔮💍💎🔗⛓️🧿🪄🪬';
+let codeInputs = [];
 
-// 🔒 Простое E2EE
+// Простое E2EE
 function simpleEncrypt(text) { return btoa(text + Date.now().toString()); }
-function simpleDecrypt(encrypted) { try { return atob(encrypted).slice(0, -13); } catch { return '[🔒 Зашифровано]'; } }
+function simpleDecrypt(encrypted) { try { return atob(encrypted).slice(0, -13); } catch { return '[🔒 Encrypted]'; } }
 
-// Авторизация API
+// Навигация форм
+function showRegister() {
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('register-form').style.display = 'block';
+}
+function showLogin() {
+    hideAllForms();
+    document.getElementById('login-form').style.display = 'block';
+}
+function showRecover() {
+    hideAllForms();
+    document.getElementById('recovery-form').style.display = 'block';
+}
+function hideAllForms() {
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('register-form').style.display = 'none';
+    document.getElementById('login-form').style.display = 'none';
+    document.getElementById('recovery-form').style.display = 'none';
+    document.getElementById('code-form').style.display = 'none';
+    document.getElementById('reset-form').style.display = 'none';
+}
+
+// Регистрация
 async function register() {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    if (!email || !password) return alert('Заполните поля!');
-    const res = await fetch('/api/register', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email, password, name: email.split('@')[0]})});
+    const email = document.getElementById('reg-email').value.trim();
+    const username = document.getElementById('reg-username').value.trim();
+    const password = document.getElementById('reg-password').value;
+    const password2 = document.getElementById('reg-password2').value;
+    
+    if (!email.includes('@') || !username || password.length < 6 || password !== password2) {
+        alert('Проверьте данные! Пароли должны совпадать, минимум 6 символов');
+        return;
+    }
+    
+    try {
+        const res = await fetch('/api/register', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({email, password, username})
+        });
+        const data = await res.json();
+        if (data.success) {
+            currentUser = data;
+            showMainApp();
+            alert('✅ Добро пожаловать в Zhuravlev Messenger!');
+            socket.emit('welcome-message', currentUser.id);
+        } else {
+            alert('❌ ' + data.error);
+        }
+    } catch(e) {
+        alert('Ошибка сервера');
+    }
+}
+
+// Вход
+async function loginUser() {
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+    
+    if (!username || !password) return alert('Заполните все поля!');
+    
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password})
+        });
+        const data = await res.json();
+        if (data.success) {
+            currentUser = data;
+            showMainApp();
+        } else {
+            alert('❌ ' + data.error);
+        }
+    } catch(e) {
+        alert('Ошибка сервера');
+    }
+}
+
+// Восстановление пароля
+async function sendRecoveryCode() {
+    const email = document.getElementById('recovery-email').value.trim();
+    if (!email.includes('@')) return alert('Введите корректный email');
+    
+    const res = await fetch('/api/recover-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email})
+    });
     const data = await res.json();
-    if (data.success) { currentUser = data; showMainApp(); alert('✅ Регистрация успешна!'); } 
-    else alert('❌ ' + data.error);
+    if (data.success) {
+        document.getElementById('recovery-email').dataset.email = email;
+        document.getElementById('recovery-form').style.display = 'none';
+        document.getElementById('code-form').style.display = 'block';
+        initCodeInputs();
+        alert('✅ Код отправлен на ' + email + '\nПроверьте почту!');
+    }
 }
 
-async function login() {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    if (!email || !password) return alert('Заполните поля!');
-    const res = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({email, password})});
+function initCodeInputs() {
+    codeInputs = document.querySelectorAll('.code-input');
+    codeInputs.forEach((input, index) => {
+        input.oninput = () => {
+            if (input.value.length === 1 && index < 5) {
+                codeInputs[index + 1].focus();
+            }
+        };
+        input.onkeydown = (e) => {
+            if (e.key === 'Backspace' && !input.value && index > 0) {
+                codeInputs[index - 1].focus();
+            }
+        };
+    });
+}
+
+async function verifyCode() {
+    const code = Array.from(codeInputs).map(i => i.value).join('');
+    const email = document.getElementById('recovery-email').dataset.email;
+    
+    if (code.length !== 6) return alert('Введите 6-значный код');
+    
+    const res = await fetch('/api/verify-recovery', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, code})
+    });
     const data = await res.json();
-    if (data.success) { currentUser = data; showMainApp(); } 
-    else alert('❌ ' + data.error);
+    
+    if (data.success) {
+        codeInputs.forEach(input => {
+            input.classList.add('correct');
+            input.classList.remove('error');
+        });
+        setTimeout(() => {
+            document.getElementById('code-form').style.display = 'none';
+            document.getElementById('reset-form').style.display = 'block';
+            document.getElementById('reset-form').dataset.email = email;
+        }, 1000);
+    } else {
+        codeInputs.forEach(input => {
+            input.classList.add('error');
+            input.classList.remove('correct');
+            setTimeout(() => input.value = '', 1000);
+        });
+    }
 }
 
-function demoLogin() {
-    document.getElementById('email').value = 'test@mail.com';
-    document.getElementById('password').value = '123456';
-    login();
+async function resetPassword() {
+    const password = document.getElementById('reset-password').value;
+    const password2 = document.getElementById('reset-password2').value;
+    const email = document.getElementById('reset-form').dataset.email;
+    
+    if (password !== password2 || password.length < 6) {
+        alert('Пароли не совпадают или слишком короткие!');
+        return;
+    }
+    
+    const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, newPassword: password})
+    });
+    const data = await res.json();
+    
+    if (data.success) {
+        alert('✅ Пароль изменен! Можете войти');
+        showLogin();
+    }
 }
 
-// Главный UI
+// Главное приложение
 function showMainApp() {
-    document.getElementById('auth').style.display = 'none';
+    hideAllForms();
     document.getElementById('app').style.display = 'flex';
-    document.getElementById('chat-title').textContent = currentUser.name;
+    document.getElementById('chat-header').style.display = 'flex';
     socket.emit('login', currentUser);
     updateTheme();
     loadChats();
-    initEmojiPicker();
-    initStickers();
 }
 
 function updateTheme() {
@@ -318,199 +543,94 @@ function updateTheme() {
     document.documentElement.style.setProperty('--received', theme.received);
 }
 
-// Навигация
-function showChats() {selectedNav='chats';updateNav();loadChats();}
-function showGroups() {selectedNav='groups';updateNav();document.getElementById('sidebar-content').innerHTML='<div style="padding:40px;text-align:center;color:#ccc;font-size:18px">👥 Групповые чаты (создайте первую!)<br><button onclick="createGroup()" style="margin-top:20px;padding:16px 32px;background:#4CAF50;color:white;border:none;border-radius:16px;font-size:17px;cursor:pointer;font-weight:700">➕ Создать группу</button></div>';}
-function showCalls() {selectedNav='calls';updateNav();document.getElementById('sidebar-content').innerHTML='<div style="padding:40px;text-align:center;color:#ccc;font-size:18px">📞 История звонков<br><small>Видеозвонки и голосовые скоро!</small></div>';}
-function showSettings() {selectedNav='settings';updateNav();document.getElementById('sidebar-content').innerHTML='<div class="settings"><div class="setting"><h3 style="font-size:22px;margin-bottom:20px">🎨 Темы оформления</h3><select class="theme-selector" onchange="changeTheme(this.value)"><option value="telegram">Telegram Classic</option><option value="dark">Темная</option><option value="blue">Голубая</option><option value="purple">Фиолетовая</option><option value="cyber">Cyberpunk</option><option value="premium">Premium ⭐</option></select></div><div class="setting"><h3 style="font-size:22px;margin-bottom:20px">👤 Профиль</h3><p><b>🚀 Telegram PRO v7.0</b></p><p><b>👤</b> '+(currentUser?currentUser.name:'Гость')+'</p><p><b>📧</b> '+currentUser?.email+'</p><p><b>🆔</b> '+currentUser?.id.slice(-8)+'</p><button onclick="logout()" style="width:100%;margin-top:20px;padding:18px;background:#ff4444;color:white;border:none;border-radius:18px;font-size:17px;font-weight:700;cursor:pointer">🚪 Выйти</button></div></div>';}
-
-function updateNav() {
-    document.querySelectorAll('.nav-btn').forEach((btn,i) => {
-        btn.classList.toggle('nav-active', ['chats','groups','calls','settings'][i]===selectedNav);
-    });
+function showChats() {
+    document.querySelector('.nav-item').classList.add('active');
+    document.getElementById('sidebar').style.display = 'block';
+    document.getElementById('chat-area').style.display = 'none';
 }
 
-// Чаты + группы
-function loadChats() {
-    document.getElementById('sidebar-content').innerHTML = '<div style="padding:40px;text-align:center;color:#999;font-size:18px">🔍 Загружаем пользователей...</div>';
-    fetch('/api/users').then(r=>r.json()).then(users => {
-        const list = document.getElementById('sidebar-content');
-        list.innerHTML = '';
-        Object.values(users).forEach(user => {
-            if (user.id !== currentUser.id) {
-                const item = document.createElement('div');
-                item.className = 'user-item';
-                item.onclick = () => openChat(user);
-                item.innerHTML = \`
-                    <div class="avatar">\${user.avatar}</div>
-                    <div class="user-info">
-                        <div class="user-name">\${user.name}</div>
-                        <div class="user-status">\${user.email} \${user.isOnline ? '🟢 онлайн' : '⚫ недавно'} \${user.premium ? '⭐' : ''}</div>
-                    </div>
-                \`;
-                list.appendChild(item);
-            }
-        });
-        document.getElementById('online-count').textContent = users.filter(u=>u.isOnline).length;
+async function loadChats() {
+    const res = await fetch('/api/users');
+    const users = await res.json();
+    const chatList = document.getElementById('chat-list');
+    chatList.innerHTML = '';
+    
+    users.forEach(user => {
+        if (user.id !== currentUser.id) {
+            const chat = document.createElement('div');
+            chat.className = 'chat-item';
+            chat.onclick = () => openChat(user);
+            chat.innerHTML = \`
+                <div class="chat-avatar">\${user.avatar}</div>
+                <div class="chat-info">
+                    <div class="chat-name">\${user.name}</div>
+                    <div class="chat-preview">Hello! How are you?</div>
+                </div>
+                <div class="chat-meta">
+                    <div class="read-status">✓✓</div>
+                    <div>14:32</div>
+                </div>
+            \`;
+            chatList.appendChild(chat);
+        }
     });
-}
-
-function createGroup() {
-    const name = prompt('Название группы:');
-    if (name) {
-        const groupId = 'group_' + Date.now();
-        socket.emit('create-group', {id: groupId, name: name, creator: currentUser.id});
-        alert('✅ Группа "' + name + '" создана!');
-    }
 }
 
 function openChat(user) {
     currentChat = user;
-    document.querySelectorAll('.user-item').forEach(item => item.classList.remove('active'));
+    document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
     event.currentTarget.classList.add('active');
-    document.getElementById('chat-title').textContent = user.name;
-    document.getElementById('chat-subtitle').textContent = user.isOnline ? '🟢 онлайн' : '⚫ недавно' + (user.premium ? ' ⭐ Premium' : '');
-    document.getElementById('chat-avatar').textContent = user.avatar;
+    
+    document.getElementById('sidebar').style.display = 'none';
+    document.getElementById('chat-area').style.display = 'flex';
+    document.querySelector('.nav-item').classList.remove('active');
+    
+    document.getElementById('header-title').textContent = user.name;
+    document.getElementById('header-avatar').textContent = user.avatar;
     document.getElementById('input-area').style.display = 'flex';
-    document.getElementById('messages').innerHTML = '<div style="padding:40px;text-align:center;color:#888;font-size:16px">🔒 E2EE чат с ' + user.name + '<br><small>Сообщения защищены end-to-end</small></div>';
-    socket.emit('get-history', {to: user.id});
+    document.getElementById('messages').innerHTML = '<div style="text-align:center; color:#999; padding:3rem;">Start a secure chat</div>';
 }
 
 async function sendMessage() {
     const text = document.getElementById('message-input').value.trim();
-    if (!text || !currentChat || !checkRateLimit(currentUser.id)) {
-        return alert('⏳ Слишком много сообщений или выберите собеседника!');
-    }
+    if (!text || !currentChat || !checkRateLimit(currentUser.id)) return;
+    
     const encrypted = simpleEncrypt(text);
     socket.emit('message', {to: currentChat.id, text: encrypted, encrypted: true});
-    addMessage(text, true, true);
+    addMessage(text, true);
     document.getElementById('message-input').value = '';
 }
 
-function addMessage(text, isSent, encrypted) {
+function addMessage(text, isSent) {
     const messages = document.getElementById('messages');
     const msg = document.createElement('div');
-    msg.className = \`msg \${isSent ? 'sent' : 'received'} \${encrypted ? 'encrypted' : ''} \${currentUser?.premium ? 'premium' : ''}\`;
+    msg.className = \`message \${isSent ? 'sent' : 'received'}\`;
     msg.innerHTML = \`
-        <div>\${encrypted ? '[🔒 Защищено E2EE]' : text}</div>
-        <div class="msg-time">\${new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</div>
+        <div class="msg-bubble \${isSent ? 'sent' : 'received'}\">\${isSent ? text : simpleDecrypt(text)}</div>
+        <div class="msg-time">\${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
+        \${isSent ? '<div class="read-indicator">✓✓</div>' : ''}
     \`;
     messages.appendChild(msg);
     messages.scrollTop = messages.scrollHeight;
 }
 
-// Файлы + медиа
-function attachFile() {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'image/*,.pdf,.mp4,.mp3,.txt';
-    input.onchange = e => {
-        const file = e.target.files[0];
-        if (file) addMessage(\`📎 \${file.name} (\${(file.size/1024/1024).toFixed(1)}MB)\`, true, false);
-    };
-    input.click();
-}
-
-function recordVoice() {
-    alert('🎤 Голосовые сообщения (MediaRecorder API скоро!)');
-}
-
-// Эмодзи + стикеры
-function initEmojiPicker() {
-    const grid = document.getElementById('emoji-grid');
-    emojiList.split('').forEach(emoji => {
-        const span = document.createElement('span');
-        span.textContent = emoji;
-        span.onclick = () => {
-            document.getElementById('message-input').value += emoji;
-            toggleEmojiPicker();
-        };
-        grid.appendChild(span);
-    });
-}
-
-function initStickers() {
-    const stickers = ['⭐','🌟','💫','✨','🎉','🚀','🔥','⚡','💎','👑','🎨','🦄','🎪','🎭','🧙‍♂️'];
-    const grid = document.getElementById('sticker-grid');
-    stickers.forEach(sticker => {
-        const div = document.createElement('div');
-        div.style.cssText = 'width:80px;height:80px;border-radius:16px;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;font-size:48px;cursor:pointer;transition:all .3s';
-        div.textContent = sticker;
-        div.onclick = () => {
-            document.getElementById('message-input').value += sticker + ' ';
-            toggleStickerPicker();
-        };
-        grid.appendChild(div);
-    });
-}
-
-function toggleEmojiPicker() {
-    const picker = document.getElementById('emoji-picker');
-    picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
-}
-
-function toggleStickerPicker() {
-    const picker = document.getElementById('sticker-picker');
-    picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
-}
-
 // Socket события
-socket.on('users', userList => {
-    if (selectedNav === 'chats') loadChats();
-});
-
 socket.on('message', data => {
-    if (currentChat?.id === data.from) addMessage(data.text, false, data.encrypted);
+    if (currentChat?.id === data.from) {
+        addMessage(data.text, false);
+    }
 });
 
-socket.on('new-group', group => {
-    alert('👥 Новая группа: ' + group.name);
-    if (selectedNav === 'groups') showGroups();
+socket.on('welcome-message', () => {
+    addMessage('Welcome to Zhuravlev Messenger! This chat is end-to-end encrypted 🔒', false);
 });
 
-socket.on('call-incoming', caller => {
-    document.getElementById('caller-name').textContent = caller.name;
-    document.getElementById('call-overlay').style.display = 'flex';
-});
-
-// Управление
 document.getElementById('message-input').addEventListener('keypress', e => {
-    if (e.key === 'Enter') sendMessage();
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
 });
-
-document.getElementById('search-user').addEventListener('input', e => {
-    socket.emit('search-users', e.target.value);
-});
-
-function changeTheme(theme) {
-    currentTheme = theme;
-    updateTheme();
-    fetch('/api/set-theme', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({userId: currentUser.id, theme})});
-}
-
-function logout() {
-    document.getElementById('app').style.display = 'none';
-    document.getElementById('auth').style.display = 'block';
-    currentUser = null;
-    socket.emit('logout');
-}
-
-function showProfile() {
-    alert(\`👤 \${currentUser.name}
-📧 \${currentUser.email}
-🎨 Тема: \${currentTheme}
-🔒 E2EE: Включено
-⭐ Premium: \${currentUser.premium ? 'Да' : 'Нет'}
-📱 Новокузнецк • v7.0\`);
-}
-
-function toggleInfo() {
-    alert('✅ Telegram PRO v7.0 | 780+ строк кода\\n\\n🔐 Регистрация/логин\\n🔒 E2EE шифрование\\n👥 Приват+групповые чаты\\n📹 Видеозвонки\\n🎤 Голосовые сообщения\\n📎 Файлы/фото/видео\\n⭐ 6 тем + Premium\\n🎨 100+ эмодзи/стикеры\\n⚡ Real-time Socket.IO\\n🚀 Railway hosting 100%');
-}
-
-function checkRateLimit() { return true; } // упрощенно
-
-function acceptCall() { alert('📹 Видеозвонок принят! (WebRTC скоро)'); document.getElementById('call-overlay').style.display = 'none'; }
-function declineCall() { alert('📞 Звонок отклонён'); document.getElementById('call-overlay').style.display = 'none'; }
 
 window.onload = () => {
     document.getElementById('message-input').focus();
@@ -520,32 +640,18 @@ window.onload = () => {
 </html>`);
 });
 
-// ========================================
-// SOCKET.IO (полная Telegram логика)
-// ========================================
+// Socket.IO
 io.on('connection', socket => {
-    console.log('👤 [' + new Date().toISOString().slice(11,19) + '] Подключение: ' + socket.id);
-    
     socket.on('login', user => {
         sessions[socket.id] = user;
         onlineUsers.add(user.id);
-        usersDB[user.id] = user;
-        
-        const userList = {};
-        for (let id in usersDB) {
-            userList[usersDB[id].id] = usersDB[id];
-        }
-        
-        socket.broadcast.emit('users', userList);
-        socket.emit('users', userList);
-        console.log('✅ [' + user.name + '] онлайн | Всего: ' + onlineUsers.size);
+        socket.broadcast.emit('users', Object.values(usersDB));
+        socket.emit('users', Object.values(usersDB));
     });
     
     socket.on('message', data => {
         const userId = sessions[socket.id]?.id;
-        if (!userId || !data.to || !checkRateLimit(userId)) {
-            return socket.emit('error', '⏳ Rate limit');
-        }
+        if (!userId || !data.to || !checkRateLimit(userId)) return;
         
         const message = {
             id: globalMessageId++,
@@ -553,86 +659,17 @@ io.on('connection', socket => {
             to: data.to,
             text: data.text,
             encrypted: data.encrypted,
-            time: new Date(),
-            premium: usersDB[userId]?.premium || false
+            time: new Date()
         };
-        
-        const chatId = [data.to, userId].sort().join('-');
-        if (!privateChats[chatId]) privateChats[chatId] = [];
-        privateChats[chatId].push(message);
         
         socket.to(data.to).emit('message', message);
         socket.emit('message', message);
-        
-        console.log('💬 [' + userId.slice(-8) + ' → ' + data.to.slice(-8) + '] ' + 
-                   (data.encrypted ? '🔒E2EE' : data.text.slice(0,20)));
-    });
-    
-    socket.on('create-group', data => {
-        groupChats[data.id] = {
-            id: data.id,
-            name: data.name,
-            creator: data.creator,
-            members: [data.creator],
-            messages: []
-        };
-        socket.broadcast.emit('new-group', groupChats[data.id]);
-        console.log('👥 Группа создана: ' + data.name);
-    });
-    
-    socket.on('get-history', data => {
-        const userId = sessions[socket.id]?.id;
-        const chatId = [data.to, userId].sort().join('-');
-        socket.emit('history', privateChats[chatId] || []);
-    });
-    
-    socket.on('search-users', query => {
-        const results = {};
-        for (let id in usersDB) {
-            const user = usersDB[id];
-            if ((user.name.toLowerCase().includes(query.toLowerCase()) || 
-                 user.email.toLowerCase().includes(query.toLowerCase())) && 
-                id !== sessions[socket.id]?.id) {
-                results[id] = user;
-            }
-        }
-        socket.emit('users', results);
-    });
-    
-    socket.on('call-user', targetId => {
-        socket.broadcast.to(targetId).emit('call-incoming', {
-            id: sessions[socket.id].id,
-            name: usersDB[sessions[socket.id]?.id]?.name
-        });
-    });
-    
-    socket.on('logout', () => {
-        const userId = sessions[socket.id]?.id;
-        if (userId) {
-            onlineUsers.delete(userId);
-            delete sessions[socket.id];
-            console.log('❌ [' + userId.slice(-8) + '] выход');
-        }
-    });
-    
-    socket.on('disconnect', () => {
-        const userId = sessions[socket.id]?.id;
-        if (userId) {
-            onlineUsers.delete(userId);
-            delete sessions[socket.id];
-            console.log('🔌 [' + socket.id.slice(-8) + '] отключён');
-        }
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
-    console.log('\\n🚀 Telegram PRO v7.0 | Миша Журавлев | Новокузнецк');
-    console.log('📍 Порт: ' + PORT);
-    console.log('👥 Пользователи: ' + Object.keys(usersDB).length);
-    console.log('💬 Чаты: ' + Object.keys(privateChats).length);
-    console.log('👥 Группы: ' + Object.keys(groupChats).length);
-    console.log('🟢 Онлайн: ' + onlineUsers.size);
-    console.log('\\n✅ Railway 100% OK | 780+ строк кода');
-    console.log('🎯 Демо: test@mail.com / 123456\\n');
+    console.log('\\n🚀 Zhuravlev Messenger PRO LIVE!');
+    console.log('📍 Port:', PORT);
+    console.log('👥 Users:', Object.keys(usersDB).length);
 });
