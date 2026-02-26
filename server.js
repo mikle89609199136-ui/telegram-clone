@@ -4,7 +4,6 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const compression = require('compression');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,7 +12,6 @@ const io = socketIo(server, {
   pingTimeout: 20000
 });
 
-// ==================== БАЗА ДАННЫХ ====================
 const DATA_DIR = path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
@@ -50,14 +48,12 @@ function checkRate(userId) {
   return true;
 }
 
-app.use(compression({ level: 6 }));
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// ==================== API ====================
 app.post('/api/register', (req, res) => {
   const { email, password, username, confirmPassword } = req.body;
-  if (!email?.includes('@') || !username || password?.length < 6 || 
+  if (!email || !email.includes('@') || !username || password.length < 6 || 
       password !== confirmPassword || usersDB[email]) {
     return res.status(400).json({ error: 'Неверные данные' });
   }
@@ -102,7 +98,7 @@ app.get('/api/chats/:userId', (req, res) => {
   const chats = [];
   for (let chatId in privateChats) {
     if (chatId.includes(userId)) {
-      const messages = privateChats[chatId];
+      const messages = privateChats[chatId] || [];
       const lastMsg = messages[messages.length-1];
       const participants = chatId.split('_');
       const otherId = participants.find(id => id !== userId);
@@ -117,7 +113,7 @@ app.get('/api/chats/:userId', (req, res) => {
       }
     }
   }
-  chats.sort((a,b) => (b.lastMessage?.time||0) - (a.lastMessage?.time||0));
+  chats.sort((a,b) => (b.lastMessage ? new Date(b.lastMessage.time) : 0) - (a.lastMessage ? new Date(a.lastMessage.time) : 0));
   res.json(chats);
 });
 
@@ -126,13 +122,14 @@ app.get('/api/messages/:userId/:otherId', (req, res) => {
   const chatId = [userId, otherId].sort().join('_');
   const messages = privateChats[chatId] || [];
   if (privateChats[chatId]) {
-    privateChats[chatId].forEach(msg => { if (msg.to === userId) msg.read = true; });
+    privateChats[chatId].forEach(msg => { 
+      if (msg.to === userId) msg.read = true; 
+    });
     saveChats(privateChats);
   }
   res.json(messages);
 });
 
-// ==================== SOCKET.IO ====================
 io.on('connection', (socket) => {
   console.log('Connected: ' + socket.id);
 
@@ -154,7 +151,7 @@ io.on('connection', (socket) => {
 
   socket.on('message', (data) => {
     if (!checkRate(data.from)) {
-      socket.emit('error', 'Rate limit');
+      socket.emit('error', 'Слишком много сообщений');
       return;
     }
     
@@ -188,223 +185,11 @@ io.on('connection', (socket) => {
   });
 });
 
-// ==================== TELEGRAM UI ====================
 app.get('/', (req, res) => {
-  res.send('<!DOCTYPE html>' +
-'<html lang="ru">' +
-'<head>' +
-'<meta charset="UTF-8">' +
-'<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-'<title>Zhuravlev Messenger V25</title>' +
-'<style>' +
-'* {margin:0;padding:0;box-sizing:border-box;font-family:system-ui,-apple-system,sans-serif;}' +
-'body {background:#f0f2f5;min-height:100vh;}' +
-'.welcome {display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;text-align:center;}' +
-'.logo {font-size:3rem;margin-bottom:1rem;}' +
-'.btn {padding:15px 30px;margin:10px;border:none;border-radius:25px;background:#34c759;color:white;font-weight:600;cursor:pointer;}' +
-'.auth-overlay {position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;z-index:1000;align-items:center;justify-content:center;}' +
-'.auth-card {background:white;border-radius:20px;padding:30px;max-width:400px;width:90%;max-height:90vh;overflow:auto;}' +
-'input {width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:10px;box-sizing:border-box;}' +
-'#main-app {display:none;height:100vh;flex-direction:column;}' +
-'#header {background:white;padding:15px 20px;border-bottom:1px solid #e4e6eb;position:fixed;top:0;left:0;right:0;z-index:100;}' +
-'#chat-list {margin-top:60px;padding:10px;}' +
-'.chat-item {display:flex;padding:15px;background:white;margin:10px;border-radius:10px;cursor:pointer;}' +
-'.chat-item:hover {background:#e4f3ff;}' +
-'.avatar {width:50px;height:50px;border-radius:25px;background:#34c759;color:white;display:flex;align-items:center;justify-content:center;margin-right:15px;font-size:20px;}' +
-'.chat-info {flex:1;}' +
-'.chat-name {font-weight:600;margin-bottom:5px;}' +
-'.chat-preview {color:#65676b;font-size:14px;}' +
-'#chat-screen {display:none;height:100vh;flex-direction:column;}' +
-'.chat-header {background:white;padding:15px 20px;border-bottom:1px solid #e4e6eb;display:flex;align-items:center;position:fixed;top:0;left:0;right:0;z-index:100;}' +
-'.messages {flex:1;overflow:auto;padding:80px 20px 120px;background:#f0f2f5;}' +
-'.message {margin-bottom:15px;max-width:70%;}' +
-'.message.sent {margin-left:auto;text-align:right;}' +
-'.bubble {padding:10px 15px;border-radius:18px;display:inline-block;max-width:100%;word-wrap:break-word;}' +
-'.bubble.sent {background:#34c759;color:white;}' +
-'.bubble.received {background:white;}' +
-'.input-area {position:fixed;bottom:0;left:0;right:0;padding:15px;background:white;border-top:1px solid #e4e6eb;display:flex;gap:10px;}' +
-'#message-input {flex:1;border:1px solid #e4e6eb;border-radius:25px;padding:12px;resize:none;max-height:120px;}' +
-'#send-btn {width:45px;height:45px;border:none;border-radius:50%;background:#34c759;color:white;font-size:18px;cursor:pointer;}' +
-'#send-btn:disabled {opacity:0.5;cursor:not-allowed;}' +
-'</style>' +
-'</head>' +
-'<body>' +
-'<div class="welcome" id="welcome">' +
-'  <div class="logo">📱</div>' +
-'  <h1>Zhuravlev Messenger</h1>' +
-'  <p>Fast. Secure. Real-time.</p>' +
-'  <button class="btn" onclick="showRegister()">📝 Register</button>' +
-'  <button class="btn" onclick="showLogin()">🔐 Login</button>' +
-'</div>' +
-'<div class="auth-overlay" id="auth-overlay">' +
-'  <div class="auth-card">' +
-'    <div id="register-form">' +
-'      <h2>Create Account</h2>' +
-'      <input id="reg-email" placeholder="Email" type="email">' +
-'      <input id="reg-username" placeholder="@username">' +
-'      <input id="reg-password" type="password" placeholder="Password">' +
-'      <input id="reg-confirm" type="password" placeholder="Confirm Password">' +
-'      <button class="btn" onclick="register()" style="width:100%;">Create Account</button>' +
-'      <p style="text-align:center;margin-top:20px;"><a href="#" onclick="showLogin();return false;">Have account?</a></p>' +
-'    </div>' +
-'    <div id="login-form" style="display:none;">' +
-'      <h2>Sign In</h2>' +
-'      <input id="login-user" placeholder="Username or Email">' +
-'      <input id="login-pass" type="password" placeholder="Password">' +
-'      <button class="btn" onclick="login()" style="width:100%;">Sign In</button>' +
-'      <p style="text-align:center;margin-top:20px;"><a href="#" onclick="showRegister();return false;">Create account</a></p>' +
-'    </div>' +
-'  </div>' +
-'</div>' +
-'<div id="main-app">' +
-'  <div id="header"><h2>💬 Chats</h2></div>' +
-'  <div id="chat-list"></div>' +
-'</div>' +
-'<div id="chat-screen">' +
-'  <div class="chat-header">' +
-'    <button onclick="backToList()" style="border:none;background:none;font-size:20px;margin-right:15px;">←</button>' +
-'    <div id="chat-title">Chat</div>' +
-'  </div>' +
-'  <div class="messages" id="messages"></div>' +
-'  <div class="input-area">' +
-'    <textarea id="message-input" placeholder="Type message..." oninput="resizeInput();checkSend()"></textarea>' +
-'    <button id="send-btn" onclick="sendMessage()" disabled>➤</button>' +
-'  </div>' +
-'</div>' +
-'<script src="/socket.io/socket.io.js"></script>' +
-'<script>' +
-'const socket = io();' +
-'let currentUser = null;' +
-'let currentChat = null;' +
-'let chats = [];' +
-'let messages = [];' +
-'function showRegister() {' +
-'  document.getElementById("register-form").style.display = "block";' +
-'  document.getElementById("login-form").style.display = "none";' +
-'  document.getElementById("auth-overlay").style.display = "flex";' +
-'}' +
-'function showLogin() {' +
-'  document.getElementById("register-form").style.display = "none";' +
-'  document.getElementById("login-form").style.display = "block";' +
-'  document.getElementById("auth-overlay").style.display = "flex";' +
-'}' +
-'async function register() {' +
-'  const email = document.getElementById("reg-email").value;' +
-'  const username = document.getElementById("reg-username").value;' +
-'  const password = document.getElementById("reg-password").value;' +
-'  const confirm = document.getElementById("reg-confirm").value;' +
-'  if (password !== confirm) return alert("Пароли не совпадают");' +
-'  const res = await fetch("/api/register", {' +
-'    method: "POST",' +
-'    headers: {"Content-Type": "application/json"},' +
-'    body: JSON.stringify({email, username, password, confirmPassword: confirm})' +
-'  });' +
-'  const data = await res.json();' +
-'  if (data.success) {' +
-'    alert("Регистрация успешна! Войдите в аккаунт");' +
-'    showLogin();' +
-'  } else {' +
-'    alert(data.error);' +
-'  }' +
-'}' +
-'async function login() {' +
-'  const username = document.getElementById("login-user").value;' +
-'  const password = document.getElementById("login-pass").value;' +
-'  const res = await fetch("/api/login", {' +
-'    method: "POST",' +
-'    headers: {"Content-Type": "application/json"},' +
-'    body: JSON.stringify({username, password})' +
-'  });' +
-'  const data = await res.json();' +
-'  if (data.success) {' +
-'    currentUser = data.user;' +
-'    localStorage.setItem("user", JSON.stringify(currentUser));' +
-'    socket.emit("join", currentUser.id);' +
-'    showApp();' +
-'    loadChats();' +
-'  } else {' +
-'    alert(data.error);' +
-'  }' +
-'}' +
-'function showApp() {' +
-'  document.getElementById("welcome").style.display = "none";' +
-'  document.getElementById("auth-overlay").style.display = "none";' +
-'  document.getElementById("main-app").style.display = "flex";' +
-'}' +
-'async function loadChats() {' +
-'  const res = await fetch("/api/chats/" + currentUser.id);' +
-'  chats = await res.json();' +
-'  renderChats();' +
-'}' +
-'function renderChats() {' +
-'  const container = document.getElementById("chat-list");' +
-'  container.innerHTML = "";' +
-'  chats.forEach(chat => {' +
-'    container.innerHTML += \'<div class="chat-item" onclick="openChat("\\\' + chat.userId + \'\\", "\\\' + chat.name + \'\\")"><div class="avatar">\' + chat.avatar + \'</div><div class="chat-info"><div class="chat-name">\' + chat.name + \'</div><div class="chat-preview">\' + (chat.lastMessage ? chat.lastMessage.text.substring(0,30) + "..." : "Нет сообщений") + \'</div></div>\' + (chat.unread ? \'<div style="background:#34c759;width:20px;height:20px;border-radius:50%;margin-left:10px;"></div>\' : "") + "</div>";' +
-'  });' +
-'}' +
-'async function openChat(userId, name) {' +
-'  currentChat = {id: userId, name};' +
-'  document.getElementById("chat-title").textContent = name;' +
-'  document.getElementById("main-app").style.display = "none";' +
-'  document.getElementById("chat-screen").style.display = "flex";' +
-'  const res = await fetch("/api/messages/" + currentUser.id + "/" + userId);' +
-'  messages = await res.json();' +
-'  renderMessages();' +
-'}' +
-'function renderMessages() {' +
-'  const container = document.getElementById("messages");' +
-'  container.innerHTML = "";' +
-'  messages.forEach(msg => {' +
-'    const isSent = msg.from === currentUser.id;' +
-'    container.innerHTML += \'<div class="message \' + (isSent ? "sent" : "") + \'" ><div class="bubble \' + (isSent ? "sent" : "received") + \'">\' + msg.text + \'</div></div>\';' +
-'  });' +
-'  container.scrollTop = container.scrollHeight;' +
-'}' +
-'function backToList() {' +
-'  document.getElementById("chat-screen").style.display = "none";' +
-'  document.getElementById("main-app").style.display = "flex";' +
-'  loadChats();' +
-'}' +
-'function resizeInput() {' +
-'  const textarea = document.getElementById("message-input");' +
-'  textarea.style.height = "auto";' +
-'  textarea.style.height = textarea.scrollHeight + "px";' +
-'}' +
-'function checkSend() {' +
-'  document.getElementById("send-btn").disabled = !document.getElementById("message-input").value.trim();' +
-'}' +
-'async function sendMessage() {' +
-'  const input = document.getElementById("message-input");' +
-'  const text = input.value.trim();' +
-'  if (!text || !currentChat) return;' +
-'  socket.emit("message", {from: currentUser.id, to: currentChat.id, text});' +
-'  input.value = "";' +
-'  checkSend();' +
-'  resizeInput();' +
-'}' +
-'socket.on("newMessage", (data) => {' +
-'  if (currentChat && (data.message.from === currentChat.id || data.message.to === currentChat.id)) {' +
-'    messages.push(data.message);' +
-'    renderMessages();' +
-'  }' +
-'  loadChats();' +
-'});' +
-'const savedUser = localStorage.getItem("user");' +
-'if (savedUser) {' +
-'  currentUser = JSON.parse(savedUser);' +
-'  socket.emit("join", currentUser.id);' +
-'  showApp();' +
-'  loadChats();' +
-'}' +
-'</script>' +
-'</body>' +
-'</html>');
+  res.send('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Zhuravlev Messenger</title><style>*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,sans-serif;}body{background:#f0f2f5;min-height:100vh;}.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:linear-gradient(135deg,#667eea,#764ba2);color:white;text-align:center;}.logo{font-size:3rem;margin-bottom:1rem;}.btn{padding:15px 30px;margin:10px;border:none;border-radius:25px;background:#34c759;color:white;font-weight:600;cursor:pointer;}.auth-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;z-index:1000;align-items:center;justify-content:center;}.auth-card{background:white;border-radius:20px;padding:30px;max-width:400px;width:90%;max-height:90vh;overflow:auto;}input{width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:10px;box-sizing:border-box;}#main-app{display:none;height:100vh;flex-direction:column;}#header{background:white;padding:15px 20px;border-bottom:1px solid #e4e6eb;position:fixed;top:0;left:0;right:0;z-index:100;}#chat-list{margin-top:60px;padding:10px;}.chat-item{display:flex;padding:15px;background:white;margin:10px 0;border-radius:10px;cursor:pointer;}.chat-item:hover{background:#e4f3ff;}.avatar{width:50px;height:50px;border-radius:25px;background:#34c759;color:white;display:flex;align-items:center;justify-content:center;margin-right:15px;font-size:20px;}.chat-info{flex:1;}.chat-name{font-weight:600;margin-bottom:5px;}.chat-preview{color:#65676b;font-size:14px;}#chat-screen{display:none;height:100vh;flex-direction:column;}.chat-header{background:white;padding:15px 20px;border-bottom:1px solid #e4e6eb;display:flex;align-items:center;position:fixed;top:0;left:0;right:0;z-index:100;}.messages{flex:1;overflow:auto;padding:80px 20px 120px;background:#f0f2f5;}.message{margin-bottom:15px;max-width:70%;}.message.sent{margin-left:auto;text-align:right;}.bubble{padding:10px 15px;border-radius:18px;display:inline-block;max-width:100%;word-wrap:break-word;}.bubble.sent{background:#34c759;color:white;}.bubble.received{background:white;border:1px solid #e4e6eb;}.input-area{position:fixed;bottom:0;left:0;right:0;padding:15px;background:white;border-top:1px solid #e4e6eb;display:flex;gap:10px;}#message-input{flex:1;border:1px solid #e4e6eb;border-radius:25px;padding:12px;resize:none;max-height:120px;}#send-btn{width:45px;height:45px;border:none;border-radius:50%;background:#34c759;color:white;font-size:18px;cursor:pointer;}#send-btn:disabled{opacity:0.5;cursor:not-allowed;}</style></head><body><div class="welcome" id="welcome"><div class="logo">📱</div><h1>Zhuravlev Messenger</h1><p>Fast. Secure. Real-time.</p><button class="btn" onclick="showRegister()">📝 Register</button><button class="btn" onclick="showLogin()">🔐 Login</button></div><div class="auth-overlay" id="auth-overlay"><div class="auth-card"><div id="register-form"><h2>Create Account</h2><input id="reg-email" placeholder="Email" type="email"><input id="reg-username" placeholder="@username"><input id="reg-password" type="password" placeholder="Password (6+ chars)"><input id="reg-confirm" type="password" placeholder="Confirm Password"><button class="btn" onclick="register()">Create Account</button><p style="text-align:center;margin-top:20px;"><a href="#" onclick="showLogin();return false;">Have account? Login</a></p></div><div id="login-form" style="display:none;"><h2>Sign In</h2><input id="login-user" placeholder="Username or Email"><input id="login-pass" type="password" placeholder="Password"><button class="btn" onclick="login()">Sign In</button><p style="text-align:center;margin-top:20px;"><a href="#" onclick="showRegister();return false;">Create account</a></p></div></div></div><div id="main-app"><div id="header"><h2>💬 Chats</h2></div><div id="chat-list"></div></div><div id="chat-screen"><div class="chat-header"><button onclick="backToList()" style="border:none;background:none;font-size:20px;margin-right:15px;">←</button><div id="chat-title">Chat</div></div><div class="messages" id="messages"></div><div class="input-area"><textarea id="message-input" placeholder="Type message..." oninput="resizeInput();checkSend()"></textarea><button id="send-btn" onclick="sendMessage()" disabled>➤</button></div></div><script src="/socket.io/socket.io.js"></script><script>const socket=io();let currentUser=null;let currentChat=null;let chats=[];let messages=[];function showRegister(){document.getElementById("register-form").style.display="block";document.getElementById("login-form").style.display="none";document.getElementById("auth-overlay").style.display="flex";}function showLogin(){document.getElementById("register-form").style.display="none";document.getElementById("login-form").style.display="block";document.getElementById("auth-overlay").style.display="flex";}async function register(){const email=document.getElementById("reg-email").value;const username=document.getElementById("reg-username").value.replace(/@/,"");const password=document.getElementById("reg-password").value;const confirm=document.getElementById("reg-confirm").value;if(password!==confirm){alert("Пароли не совпадают");return;}if(password.length<6){alert("Пароль минимум 6 символов");return;}try{const res=await fetch("/api/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,username,password,confirmPassword:confirm})});const data=await res.json();if(data.success){alert("Регистрация успешна! Войдите.");showLogin();}else{alert(data.error);}}catch(e){alert("Ошибка сервера");}}async function login(){const username=document.getElementById("login-user").value;const password=document.getElementById("login-pass").value;try{const res=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});const data=await res.json();if(data.success){currentUser=data.user;localStorage.setItem("user",JSON.stringify(currentUser));socket.emit("join",currentUser.id);showApp();setTimeout(loadChats,500);}else{alert(data.error);}}catch(e){alert("Ошибка сервера");}}function showApp(){document.getElementById("welcome").style.display="none";document.getElementById("auth-overlay").style.display="none";document.getElementById("main-app").style.display="flex";}async function loadChats(){try{const res=await fetch("/api/chats/"+currentUser.id);chats=await res.json();renderChats();}catch(e){console.log("No chats yet");}}function renderChats(){const container=document.getElementById("chat-list");container.innerHTML="";if(chats.length===0){container.innerHTML="<div style=\'padding:40px;text-align:center;color:#65676b\'>Нет чатов. Найдите собеседника!</div>";return;}chats.forEach(chat=>{const unread=chat.unread>0?"<div style=\'background:#34c759;width:20px;height:20px;border-radius:50%;margin-left:10px;\'></div>":"";const preview=chat.lastMessage?chat.lastMessage.text.substring(0,30)+(chat.lastMessage.text.length>30?"…":""):"Нет сообщений";container.innerHTML+="<div class=\'chat-item\' onclick=\'openChat(\\'"+chat.userId+"\\',\\\'"+chat.name.replace(/\'/g,"&#39;")+"\')\'>"+'<div class="avatar">'+chat.avatar+"</div>"+"<div class=\'chat-info\'><div class=\'chat-name\'>"+chat.name+"</div><div class=\'chat-preview\'>"+preview+"</div></div>"+unread+"</div>";});}async function openChat(userId,name){currentChat={id:userId,name:name};document.getElementById("chat-title").textContent=name;document.getElementById("main-app").style.display="none";document.getElementById("chat-screen").style.display="flex";try{const res=await fetch("/api/messages/"+currentUser.id+"/"+userId);messages=await res.json();renderMessages();}catch(e){messages=[];renderMessages();}}function renderMessages(){const container=document.getElementById("messages");container.innerHTML="";messages.forEach(msg=>{const isSent=msg.from===currentUser.id;container.innerHTML+="<div class=\'message"+(isSent?" sent":"")+"\'>"+'<div class="bubble '+(isSent?"sent":"received")+'">'+msg.text+"</div></div>";});container.scrollTop=container.scrollHeight;}function backToList(){document.getElementById("chat-screen").style.display="none";document.getElementById("main-app").style.display="flex";loadChats();}function resizeInput(){const el=document.getElementById("message-input");el.style.height="auto";el.style.height=el.scrollHeight+"px";}function checkSend(){document.getElementById("send-btn").disabled=!document.getElementById("message-input").value.trim();}async function sendMessage(){const input=document.getElementById("message-input");const text=input.value.trim();if(!text||!currentChat)return;input.value="";checkSend();resizeInput();socket.emit("message",{from:currentUser.id,to:currentChat.id,text:text});}socket.on("newMessage",data=>{if(currentChat&&(data.message.from===currentChat.id||data.message.to===currentChat.id)){messages.push(data.message);renderMessages();}loadChats();});const savedUser=localStorage.getItem("user");if(savedUser){try{currentUser=JSON.parse(savedUser);socket.emit("join",currentUser.id);showApp();setTimeout(loadChats,500);}catch(e){localStorage.removeItem("user");}}</script></body></html>');
 });
 
-// ==================== RAILWAY-FIXED START ====================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log("V25.0 RAILWAY READY http://localhost:" + PORT);
-  console.log("Register/Login/Chat/Real-time = 100% WORKS!");
+  console.log("V27.0 Messenger LIVE on port " + PORT);
 });
