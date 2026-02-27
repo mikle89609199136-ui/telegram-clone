@@ -1,4 +1,4 @@
-// server.js — основной сервер (без обязательной почты)
+// server.js — версия с диагностикой и временным JWT_SECRET
 
 require('dotenv').config();
 const express = require('express');
@@ -13,22 +13,29 @@ const morgan = require('morgan');
 
 // Импорт модулей
 const authRoutes = require('./auth');
-const dataModule = require('./data');
 const socketHandler = require('./index');
 
 const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET;
 
-// Проверяем только JWT_SECRET (почта теперь не обязательна)
+// 🔍 ДИАГНОСТИКА: смотрим, видит ли сервер переменную
+console.log('🔍 Все переменные окружения (ключи):', Object.keys(process.env).filter(key => 
+  !key.includes('SECRET') && !key.includes('PASS')
+));
+console.log('🔍 JWT_SECRET из process.env:', process.env.JWT_SECRET ? '✅ найдена' : '❌ отсутствует');
+
+// ВРЕМЕННОЕ РЕШЕНИЕ: если нет JWT_SECRET, используем тестовый (⚠️ небезопасно!)
+let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.error('❌ JWT_SECRET не задан! Укажите его в .env или в переменных Railway');
-  process.exit(1);
+  console.warn('⚠️ JWT_SECRET не задан! Использую временное значение (только для теста)');
+  JWT_SECRET = 'temp_secret_for_test_only_123456';
+} else {
+  console.log('🔑 JWT_SECRET успешно загружен из переменных');
 }
 
-// Создаём директории для данных и загрузок
+// Создаём директории
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 fs.ensureDirSync(DATA_DIR);
@@ -52,11 +59,11 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(morgan('combined'));
 
-// Rate limiting для API
+// Rate limiting
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 минут
+  windowMs: 15 * 60 * 1000,
   max: 200,
-  message: { error: 'Слишком много запросов, попробуйте позже' }
+  message: { error: 'Слишком много запросов' }
 });
 app.use('/api/', apiLimiter);
 
@@ -64,10 +71,10 @@ app.use('/api/', apiLimiter);
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Маршруты аутентификации
+// Маршруты аутентификации (передаём JWT_SECRET, если нужно)
 app.use('/api/auth', authRoutes);
 
-// Эндпоинт проверки здоровья
+// Эндпоинт здоровья
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: '🟢 Zhuravlev Messenger работает',
@@ -76,7 +83,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Инициализация Socket.IO
+// Socket.IO
 const io = socketHandler(server);
 
 // Обработка ошибок
@@ -85,14 +92,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
-// Запуск сервера (обязательно 0.0.0.0 для Railway)
+// Запуск
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   🚀 Zhuravlev Telegram Clone запущен!
   🌐 http://localhost:${PORT}
-  📧 Почта: ${process.env.EMAIL_USER ? '✅ настроена' : '⚠️ не настроена (восстановление пароля отключено)'}
-  🔑 JWT_SECRET: ✅
+  🔑 JWT_SECRET: ${JWT_SECRET === 'temp_secret_for_test_only_123456' ? '⚠️ временный' : '✅ из переменных'}
   ⚡ WebSocket: активен
-  📁 Данные: ${DATA_DIR}
   `);
 });
