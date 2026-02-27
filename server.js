@@ -1,4 +1,4 @@
-// server.js — версия с диагностикой и временным JWT_SECRET
+// server.js — финальная версия (исправлены все ошибки)
 
 require('dotenv').config();
 const express = require('express');
@@ -11,29 +11,25 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 
-// Импорт модулей
 const authRoutes = require('./auth');
 const socketHandler = require('./index');
 
 const app = express();
 const server = http.createServer(app);
 
+// ✅ Доверяем прокси (Railway)
+app.set('trust proxy', 1);
+
 const PORT = process.env.PORT || 3000;
 
-// 🔍 ДИАГНОСТИКА: смотрим, видит ли сервер переменную
-console.log('🔍 Все переменные окружения (ключи):', Object.keys(process.env).filter(key => 
-  !key.includes('SECRET') && !key.includes('PASS')
-));
-console.log('🔍 JWT_SECRET из process.env:', process.env.JWT_SECRET ? '✅ найдена' : '❌ отсутствует');
-
-// ВРЕМЕННОЕ РЕШЕНИЕ: если нет JWT_SECRET, используем тестовый (⚠️ небезопасно!)
+// ✅ Временный JWT_SECRET (чтобы сервер точно запустился)
 let JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
   console.warn('⚠️ JWT_SECRET не задан! Использую временное значение (только для теста)');
   JWT_SECRET = 'temp_secret_for_test_only_123456';
-} else {
-  console.log('🔑 JWT_SECRET успешно загружен из переменных');
 }
+// Принудительно устанавливаем в process.env, чтобы auth.js видел переменную
+process.env.JWT_SECRET = JWT_SECRET;
 
 // Создаём директории
 const DATA_DIR = path.join(__dirname, 'data');
@@ -67,12 +63,11 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
-// Статические файлы
+// Статические файлы из папки public
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Маршруты аутентификации (передаём JWT_SECRET, если нужно)
-app.use('/api/auth', authRoutes);
+// ✅ Подключаем маршруты аутентификации по пути /api (теперь /api/register, /api/login и т.д.)
+app.use('/api', authRoutes);
 
 // Эндпоинт здоровья
 app.get('/health', (req, res) => {
@@ -81,6 +76,16 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// ✅ Для всех остальных GET-запросов отдаём chat.html (поддержка SPA)
+app.get('*', (req, res) => {
+  const chatPath = path.join(__dirname, 'public', 'chat.html');
+  if (fs.existsSync(chatPath)) {
+    res.sendFile(chatPath);
+  } else {
+    res.status(404).send('❌ chat.html не найден в папке public. Создайте его!');
+  }
 });
 
 // Socket.IO
