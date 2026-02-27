@@ -1,21 +1,42 @@
 {
   "name": "zhuravlev-telegram-pro",
-  "version": "16.0.0",
-  "description": "Полный Telegram клон 2026 с регистрацией по почте",
+  "version": "17.0.0",
+  "description": "🚀 Zhuravlev Telegram Pro - Полный клон Telegram 2026 с регистрацией, чатами, real-time",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "deploy": "npm install && npm run build",
+    "test": "node test-server.js"
+  },
+  "author": "Міша Журавлев <Novokuznetsk, RU>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/misha-zhuravlev/telegram-pro"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   },
   "dependencies": {
     "express": "^4.21.1",
     "socket.io": "^4.8.0",
     "cors": "^2.8.5",
-    "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
-    "nodemailer": "^6.9.15"
+    "jsonwebtoken": "^9.0.2"
   },
-  "engines": {
-    "node": ">=20.0.0"
-  }
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "keywords": [
+    "telegram",
+    "chat",
+    "realtime",
+    "socket.io",
+    "nodejs",
+    "railway",
+    "messenger"
+  ]
 }
+
