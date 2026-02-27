@@ -1,1 +1,1107 @@
-с
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Zhuravlev Telegram</title>
+  <!-- Иконка журавля (из ссылки) -->
+  <link rel="icon" href="https://img2.pngindir.com/20180705/cfy/kisspng-stork-crane-bird-cobalt-blue-beak-shared-value-5b3e1b49cfb845.9898416015307968738508.jpg">
+  <!-- Socket.IO клиент -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    /* ========== ГЛОБАЛЬНЫЕ СТИЛИ (Mobile-first, Telegram тема) ========== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: #0e1621;
+      color: #fff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Контейнеры экранов */
+    .screen {
+      display: none;
+      height: 100%;
+      flex-direction: column;
+    }
+    .screen.active {
+      display: flex;
+    }
+
+    /* ========== ЭКРАН АВТОРИЗАЦИИ ========== */
+    #auth-screen {
+      background: linear-gradient(145deg, #1f2b38 0%, #0e1621 100%);
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .auth-card {
+      background: #17212b;
+      border-radius: 24px;
+      padding: 32px 24px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    .logo h1 {
+      font-size: 28px;
+      font-weight: 600;
+      color: #2ea6ff;
+    }
+    .logo p {
+      color: #8e9eae;
+      margin-top: 8px;
+    }
+
+    .auth-tabs {
+      display: flex;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #2b3b4a;
+    }
+    .auth-tab {
+      flex: 1;
+      text-align: center;
+      padding: 12px;
+      cursor: pointer;
+      color: #8e9eae;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .auth-tab.active {
+      color: #2ea6ff;
+      border-bottom: 2px solid #2ea6ff;
+    }
+
+    .auth-form {
+      display: none;
+    }
+    .auth-form.active {
+      display: block;
+    }
+
+    .auth-form h2 {
+      margin-bottom: 20px;
+      font-size: 22px;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 16px 18px;
+      background: #242f3d;
+      border: 1px solid #3a4a5a;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 16px;
+      margin-bottom: 16px;
+      outline: none;
+      transition: border 0.2s;
+    }
+    .input-field:focus {
+      border-color: #2ea6ff;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 16px;
+      background: #2ea6ff;
+      border: none;
+      border-radius: 14px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-bottom: 12px;
+    }
+    .btn:hover {
+      background: #1e8fd9;
+    }
+    .btn.secondary {
+      background: transparent;
+      border: 1px solid #2ea6ff;
+      color: #2ea6ff;
+    }
+
+    .link {
+      color: #2ea6ff;
+      text-decoration: none;
+      display: inline-block;
+      margin: 10px 0;
+    }
+
+    .warning {
+      color: #f5a623;
+      font-size: 14px;
+      margin-bottom: 16px;
+      padding: 10px;
+      background: #2b2b1a;
+      border-radius: 8px;
+    }
+
+    /* Код-верификация (6 квадратиков) */
+    .code-container {
+      display: flex;
+      justify-content: space-between;
+      margin: 20px 0;
+    }
+    .code-digit {
+      width: 48px;
+      height: 56px;
+      background: #242f3d;
+      border: 1px solid #3a4a5a;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 28px;
+      text-align: center;
+      line-height: 56px;
+      font-weight: 600;
+    }
+    .code-digit.success {
+      background: #4caf50;
+      border-color: #4caf50;
+    }
+    .code-digit.error {
+      background: #f44336;
+      border-color: #f44336;
+    }
+
+    /* ========== ОСНОВНОЙ ИНТЕРФЕЙС (после входа) ========== */
+    #main-screen {
+      background: #0e1621;
+    }
+
+    /* Верхняя панель */
+    .top-bar {
+      background: #17212b;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #2b3b4a;
+    }
+    .top-bar h1 {
+      flex: 1;
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .top-bar .edit-btn {
+      color: #2ea6ff;
+      background: none;
+      border: none;
+      font-size: 16px;
+      margin-right: 16px;
+    }
+    .top-bar .create-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: #2ea6ff;
+    }
+
+    /* Поиск */
+    .search-box {
+      padding: 8px 16px;
+      background: #17212b;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 12px 18px;
+      background: #242f3d;
+      border: none;
+      border-radius: 24px;
+      color: #fff;
+      outline: none;
+    }
+
+    /* Нижняя навигация */
+    .bottom-nav {
+      display: flex;
+      background: #17212b;
+      border-top: 1px solid #2b3b4a;
+      padding: 8px 0;
+    }
+    .nav-item {
+      flex: 1;
+      text-align: center;
+      color: #8e9eae;
+      font-size: 12px;
+      padding: 8px;
+      cursor: pointer;
+    }
+    .nav-item.active {
+      color: #2ea6ff;
+    }
+    .nav-item i {
+      display: block;
+      font-size: 24px;
+      margin-bottom: 4px;
+    }
+
+    /* Список чатов */
+    .chats-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0;
+    }
+    .chat-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      background: #0e1621;
+      border-bottom: 1px solid #17212b;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .chat-item:hover {
+      background: #1a2633;
+    }
+    .chat-avatar {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: #2ea6ff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: #fff;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+    .chat-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-name {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .chat-last-msg {
+      color: #8e9eae;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-meta {
+      text-align: right;
+      font-size: 12px;
+      color: #8e9eae;
+    }
+    .chat-time {
+      margin-bottom: 4px;
+    }
+    .chat-status {
+      color: #2ea6ff;
+    }
+
+    /* Окно чата */
+    .chat-window {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #0e1621;
+    }
+    .chat-header {
+      background: #17212b;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #2b3b4a;
+    }
+    .back-btn {
+      background: none;
+      border: none;
+      color: #2ea6ff;
+      font-size: 24px;
+      margin-right: 12px;
+      cursor: pointer;
+    }
+    .chat-header-info {
+      flex: 1;
+    }
+    .chat-header-name {
+      font-weight: 600;
+    }
+    .chat-header-status {
+      font-size: 12px;
+      color: #8e9eae;
+    }
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .message {
+      max-width: 80%;
+      margin-bottom: 8px;
+      display: flex;
+      flex-direction: column;
+    }
+    .message.own {
+      align-self: flex-end;
+    }
+    .message-bubble {
+      background: #17212b;
+      border-radius: 18px;
+      padding: 8px 12px;
+      color: #fff;
+      word-wrap: break-word;
+    }
+    .message.own .message-bubble {
+      background: #2ea6ff;
+    }
+    .message-time {
+      font-size: 10px;
+      color: #8e9eae;
+      margin-top: 2px;
+      align-self: flex-end;
+    }
+    .message.own .message-time {
+      color: #b3d9ff;
+    }
+
+    /* Поле ввода */
+    .input-area {
+      background: #17212b;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      border-top: 1px solid #2b3b4a;
+    }
+    .attach-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: #8e9eae;
+      margin-right: 12px;
+      cursor: pointer;
+    }
+    .input-wrapper {
+      flex: 1;
+      background: #242f3d;
+      border-radius: 24px;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+    }
+    .input-wrapper input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #fff;
+      outline: none;
+      font-size: 16px;
+    }
+    .input-wrapper input::placeholder {
+      color: #5e6f7e;
+    }
+    .emoji-btn, .voice-btn {
+      background: none;
+      border: none;
+      font-size: 22px;
+      color: #8e9eae;
+      margin-left: 8px;
+      cursor: pointer;
+    }
+    .voice-btn.send-btn {
+      color: #2ea6ff;
+    }
+
+    /* Контекстное меню */
+    .context-menu {
+      position: absolute;
+      background: #17212b;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      z-index: 1000;
+      min-width: 180px;
+    }
+    .context-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 1px solid #2b3b4a;
+    }
+    .context-item:last-child {
+      border-bottom: none;
+    }
+    .context-item:hover {
+      background: #242f3d;
+    }
+    .context-item.delete-item {
+      color: #f44336;
+    }
+
+    /* Мультивыбор */
+    .multi-select-bar {
+      background: #17212b;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #2b3b4a;
+    }
+    .multi-counter {
+      flex: 1;
+      font-weight: 600;
+    }
+    .multi-actions button {
+      background: none;
+      border: none;
+      color: #2ea6ff;
+      font-size: 16px;
+      margin-left: 16px;
+    }
+  </style>
+</head>
+<body>
+  <!-- ЭКРАН АВТОРИЗАЦИИ -->
+  <div id="auth-screen" class="screen active">
+    <div class="auth-card">
+      <div class="logo">
+        <h1>🕊️ Zhuravlev Telegram</h1>
+        <p>Добро пожаловать в мессенджер Журавлевых</p>
+      </div>
+
+      <!-- Вкладки: Вход / Регистрация -->
+      <div class="auth-tabs">
+        <div class="auth-tab active" data-tab="login">Вход</div>
+        <div class="auth-tab" data-tab="register">Регистрация</div>
+      </div>
+
+      <!-- Форма входа -->
+      <div id="login-form" class="auth-form active">
+        <h2>Вход в аккаунт</h2>
+        <input type="text" id="login-identifier" class="input-field" placeholder="Email или @username">
+        <input type="password" id="login-password" class="input-field" placeholder="Пароль">
+        <button class="btn" onclick="login()">Войти</button>
+        <a href="#" class="link" onclick="showForgotStep1()">Забыли пароль?</a>
+        <p style="color: #8e9eae; text-align: center;">Нет аккаунта? <a href="#" class="link" onclick="switchAuthTab('register')">Регистрация</a></p>
+      </div>
+
+      <!-- Форма регистрации -->
+      <div id="register-form" class="auth-form">
+        <h2>Регистрация</h2>
+        <div class="warning">
+          ⚠️ Юзернейм навсегда привязывается к аккаунту. Изменить нельзя! Только удаление аккаунта.
+        </div>
+        <input type="email" id="reg-email" class="input-field" placeholder="Email">
+        <input type="text" id="reg-username" class="input-field" placeholder="@username">
+        <input type="password" id="reg-password" class="input-field" placeholder="Пароль">
+        <input type="password" id="reg-password2" class="input-field" placeholder="Повторите пароль">
+        <button class="btn" onclick="register()">Создать аккаунт</button>
+        <p style="color: #8e9eae; text-align: center;">Уже есть аккаунт? <a href="#" class="link" onclick="switchAuthTab('login')">Вход</a></p>
+      </div>
+
+      <!-- Форма восстановления (шаг 1: email) -->
+      <div id="forgot-step1" class="auth-form">
+        <h2>Восстановление пароля</h2>
+        <p style="color: #8e9eae;">Введите email, привязанный к аккаунту</p>
+        <input type="email" id="forgot-email" class="input-field" placeholder="Email">
+        <button class="btn" onclick="sendResetCode()">Отправить код</button>
+        <a href="#" class="link" onclick="backToLogin()">← Назад</a>
+      </div>
+
+      <!-- Форма восстановления (шаг 2: ввод 6-значного кода) -->
+      <div id="forgot-step2" class="auth-form">
+        <h2>Введите код</h2>
+        <p style="color: #8e9eae;">Код отправлен на вашу почту</p>
+        <div class="code-container" id="code-container">
+          <input type="text" class="code-digit" maxlength="1" data-index="0" readonly>
+          <input type="text" class="code-digit" maxlength="1" data-index="1" readonly>
+          <input type="text" class="code-digit" maxlength="1" data-index="2" readonly>
+          <input type="text" class="code-digit" maxlength="1" data-index="3" readonly>
+          <input type="text" class="code-digit" maxlength="1" data-index="4" readonly>
+          <input type="text" class="code-digit" maxlength="1" data-index="5" readonly>
+        </div>
+        <button class="btn" onclick="verifyCode()" id="verify-code-btn" disabled>Проверить</button>
+        <a href="#" class="link" onclick="backToLogin()">← Назад</a>
+      </div>
+
+      <!-- Форма восстановления (шаг 3: новый пароль) -->
+      <div id="forgot-step3" class="auth-form">
+        <h2>Новый пароль</h2>
+        <input type="password" id="new-password" class="input-field" placeholder="Новый пароль">
+        <input type="password" id="confirm-password" class="input-field" placeholder="Повторите пароль">
+        <button class="btn" onclick="resetPassword()">Сохранить</button>
+        <a href="#" class="link" onclick="backToLogin()">← Назад</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ОСНОВНОЙ ЭКРАН (после входа) -->
+  <div id="main-screen" class="screen">
+    <!-- Верхняя панель -->
+    <div class="top-bar">
+      <h1 id="screen-title">Чаты</h1>
+      <button class="edit-btn" onclick="toggleEditMode()">Изм.</button>
+      <button class="create-btn" onclick="createNewChat()">📝</button>
+    </div>
+
+    <!-- Поиск -->
+    <div class="search-box">
+      <input type="text" id="search-input" placeholder="Поиск..." oninput="filterChats()">
+    </div>
+
+    <!-- Контейнер для списка чатов / контактов / настроек -->
+    <div id="content-area" style="flex: 1; overflow-y: auto;">
+      <!-- Список чатов (по умолчанию) -->
+      <div id="chats-view" class="view active">
+        <div class="chats-list" id="chats-list">
+          <!-- Заглушка: будет заполняться динамически -->
+        </div>
+      </div>
+
+      <!-- Контакты (заглушка) -->
+      <div id="contacts-view" class="view" style="display: none;">
+        <div style="text-align: center; margin-top: 40px; color: #8e9eae;">Список контактов</div>
+      </div>
+
+      <!-- Настройки (заглушка) -->
+      <div id="settings-view" class="view" style="display: none;">
+        <div style="text-align: center; margin-top: 40px; color: #8e9eae;">Настройки профиля</div>
+      </div>
+
+      <!-- Окно чата (открывается при клике на чат) -->
+      <div id="chat-window" class="chat-window" style="display: none;">
+        <div class="chat-header">
+          <button class="back-btn" onclick="closeChat()">←</button>
+          <div class="chat-header-info">
+            <div class="chat-header-name" id="chat-header-name">Загрузка...</div>
+            <div class="chat-header-status" id="chat-header-status">онлайн</div>
+          </div>
+          <button class="edit-btn" style="margin-right: 0;">⋮</button>
+        </div>
+        <div class="messages-area" id="messages-area">
+          <!-- Сообщения -->
+        </div>
+        <!-- Поле ввода -->
+        <div class="input-area">
+          <button class="attach-btn" onclick="showAttachMenu()">📎</button>
+          <div class="input-wrapper">
+            <input type="text" id="message-input" placeholder="Сообщение" oninput="handleTyping()">
+            <button class="emoji-btn" onclick="showEmojiPicker()">😀</button>
+            <button class="voice-btn" id="send-voice-btn" onclick="sendMessage()">🎤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Нижняя навигация -->
+    <div class="bottom-nav">
+      <div class="nav-item active" data-view="chats" onclick="switchView('chats')">
+        <i>💬</i><span>Чаты</span>
+      </div>
+      <div class="nav-item" data-view="contacts" onclick="switchView('contacts')">
+        <i>👥</i><span>Контакты</span>
+      </div>
+      <div class="nav-item" data-view="settings" onclick="switchView('settings')">
+        <i>⚙️</i><span>Настройки</span>
+      </div>
+    </div>
+
+    <!-- Контекстное меню (скрыто) -->
+    <div id="context-menu" class="context-menu" style="display: none;"></div>
+
+    <!-- Мультивыбор (скрыт) -->
+    <div id="multi-select-bar" class="multi-select-bar" style="display: none;">
+      <div class="multi-counter" id="multi-counter">0 выбрано</div>
+      <div class="multi-actions">
+        <button onclick="deleteSelected()">Удалить</button>
+        <button onclick="forwardSelected()">Переслать</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
+    let socket;
+    let currentUser = null;
+    let token = localStorage.getItem('token');
+    let currentChatId = null;
+    let chats = [];
+    let messages = [];
+    let editMode = false;
+    let selectedChats = new Set();
+    let selectedMessages = new Set();
+
+    // ==================== ИНИЦИАЛИЗАЦИЯ ====================
+    document.addEventListener('DOMContentLoaded', () => {
+      if (token) {
+        // Пытаемся подключиться к сокету и загрузить данные
+        connectSocket();
+        loadUserData();
+        showMainScreen();
+      } else {
+        showAuthScreen();
+      }
+
+      // Обработка вкладок авторизации
+      document.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+          document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          const target = tab.dataset.tab;
+          document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
+          if (target === 'login') document.getElementById('login-form').classList.add('active');
+          else if (target === 'register') document.getElementById('register-form').classList.add('active');
+        });
+      });
+
+      // Обработка ввода кода (6 цифр)
+      setupCodeInputs();
+    });
+
+    // ==================== АВТОРИЗАЦИЯ ====================
+    function switchAuthTab(tab) {
+      document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+      if (tab === 'login') {
+        document.querySelector('[data-tab="login"]').classList.add('active');
+        document.getElementById('login-form').classList.add('active');
+        document.getElementById('register-form').classList.remove('active');
+      } else {
+        document.querySelector('[data-tab="register"]').classList.add('active');
+        document.getElementById('register-form').classList.add('active');
+        document.getElementById('login-form').classList.remove('active');
+      }
+    }
+
+    function backToLogin() {
+      document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+      document.getElementById('login-form').classList.add('active');
+      document.querySelectorAll('.auth-tab')[0].classList.add('active');
+      document.querySelectorAll('.auth-tab')[1].classList.remove('active');
+    }
+
+    async function register() {
+      const email = document.getElementById('reg-email').value;
+      const username = document.getElementById('reg-username').value.replace('@', '');
+      const password = document.getElementById('reg-password').value;
+      const password2 = document.getElementById('reg-password2').value;
+
+      if (password !== password2) {
+        alert('Пароли не совпадают');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, username, password, confirmPassword: password2 })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          token = data.token;
+          localStorage.setItem('token', token);
+          currentUser = data.user;
+          connectSocket();
+          showMainScreen();
+          loadChats();
+        } else {
+          alert(data.error || 'Ошибка регистрации');
+        }
+      } catch (err) {
+        alert('Ошибка сети');
+      }
+    }
+
+    async function login() {
+      const identifier = document.getElementById('login-identifier').value;
+      const password = document.getElementById('login-password').value;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          token = data.token;
+          localStorage.setItem('token', token);
+          currentUser = data.user;
+          connectSocket();
+          showMainScreen();
+          loadChats();
+        } else {
+          alert(data.error || 'Ошибка входа');
+        }
+      } catch (err) {
+        alert('Ошибка сети');
+      }
+    }
+
+    // Восстановление пароля
+    function showForgotStep1() {
+      document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+      document.getElementById('forgot-step1').classList.add('active');
+    }
+
+    async function sendResetCode() {
+      const email = document.getElementById('forgot-email').value;
+      if (!email) return alert('Введите email');
+
+      try {
+        const res = await fetch('/api/auth/forgot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          // Переходим к шагу 2
+          document.getElementById('forgot-step1').classList.remove('active');
+          document.getElementById('forgot-step2').classList.add('active');
+          window.resetEmail = email;
+          startCodeInput();
+        } else {
+          alert(data.error || 'Ошибка');
+        }
+      } catch (err) {
+        alert('Ошибка сети');
+      }
+    }
+
+    function setupCodeInputs() {
+      const digits = document.querySelectorAll('.code-digit');
+      digits.forEach((input, index) => {
+        input.addEventListener('input', (e) => {
+          if (e.target.value.length === 1) {
+            if (index < digits.length - 1) {
+              digits[index + 1].focus();
+            }
+          }
+          updateCodeComplete();
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Backspace' && !e.target.value && index > 0) {
+            digits[index - 1].focus();
+          }
+        });
+      });
+    }
+
+    function startCodeInput() {
+      const digits = document.querySelectorAll('.code-digit');
+      digits.forEach(d => {
+        d.value = '';
+        d.classList.remove('success', 'error');
+        d.readOnly = false;
+      });
+      digits[0].focus();
+      document.getElementById('verify-code-btn').disabled = true;
+    }
+
+    function updateCodeComplete() {
+      const digits = document.querySelectorAll('.code-digit');
+      const code = Array.from(digits).map(d => d.value).join('');
+      document.getElementById('verify-code-btn').disabled = code.length !== 6;
+    }
+
+    async function verifyCode() {
+      const digits = document.querySelectorAll('.code-digit');
+      const code = Array.from(digits).map(d => d.value).join('');
+      const email = window.resetEmail;
+
+      try {
+        const res = await fetch('/api/auth/verify-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code })
+        });
+        const data = await res.json();
+        if (data.valid) {
+          digits.forEach(d => d.classList.add('success'));
+          setTimeout(() => {
+            document.getElementById('forgot-step2').classList.remove('active');
+            document.getElementById('forgot-step3').classList.add('active');
+            window.resetCode = code;
+          }, 500);
+        } else {
+          digits.forEach(d => d.classList.add('error'));
+          setTimeout(() => {
+            digits.forEach(d => {
+              d.classList.remove('error');
+              d.value = '';
+            });
+            digits[0].focus();
+          }, 1000);
+        }
+      } catch (err) {
+        alert('Ошибка проверки кода');
+      }
+    }
+
+    async function resetPassword() {
+      const newPass = document.getElementById('new-password').value;
+      const confirm = document.getElementById('confirm-password').value;
+      if (newPass !== confirm) {
+        alert('Пароли не совпадают');
+        return;
+      }
+      if (newPass.length < 6) {
+        alert('Пароль должен быть минимум 6 символов');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/reset-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: window.resetEmail,
+            code: window.resetCode,
+            newPassword: newPass,
+            confirmPassword: confirm
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert('Пароль успешно изменён');
+          backToLogin();
+        } else {
+          alert(data.error || 'Ошибка');
+        }
+      } catch (err) {
+        alert('Ошибка сети');
+      }
+    }
+
+    // ==================== SOCKET.IO ====================
+    function connectSocket() {
+      socket = io('/', { auth: { token } });
+
+      socket.on('connect', () => {
+        console.log('Socket connected');
+        loadChats();
+      });
+
+      socket.on('chatsList', (loadedChats) => {
+        chats = loadedChats;
+        renderChats();
+      });
+
+      socket.on('newMessage', (message) => {
+        if (message.chatId === currentChatId) {
+          messages.push(message);
+          renderMessage(message);
+        } else {
+          // Обновить список чатов (последнее сообщение)
+          updateChatLastMessage(message);
+        }
+      });
+
+      socket.on('messageSent', (message) => {
+        // Можно обновить статус
+      });
+
+      socket.on('userTyping', ({ username, isTyping }) => {
+        // Показываем индикатор
+        if (currentChatId) {
+          const statusEl = document.getElementById('chat-header-status');
+          if (isTyping) {
+            statusEl.textContent = `${username} печатает...`;
+          } else {
+            statusEl.textContent = 'онлайн';
+          }
+        }
+      });
+
+      socket.on('messagesRead', ({ messageIds }) => {
+        // Обновить галочки
+      });
+    }
+
+    // ==================== ЗАГРУЗКА ДАННЫХ ====================
+    function loadUserData() {
+      // Можно загрузить профиль и т.д.
+    }
+
+    function loadChats() {
+      if (socket) {
+        socket.emit('getChats');
+      }
+    }
+
+    function renderChats() {
+      const list = document.getElementById('chats-list');
+      list.innerHTML = '';
+      chats.forEach(chat => {
+        const item = document.createElement('div');
+        item.className = 'chat-item';
+        item.dataset.chatId = chat.id;
+        item.onclick = () => openChat(chat.id);
+
+        // Аватар (журавль или инициалы)
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'chat-avatar';
+        avatarDiv.textContent = chat.title ? chat.title[0] : '🕊️'; // заглушка
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'chat-info';
+        infoDiv.innerHTML = `
+          <div class="chat-name">${chat.title || 'Пользователь'}</div>
+          <div class="chat-last-msg">${chat.lastMessage?.content || 'Нет сообщений'}</div>
+        `;
+
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'chat-meta';
+        metaDiv.innerHTML = `
+          <div class="chat-time">${chat.lastMessage?.timestamp ? new Date(chat.lastMessage.timestamp).toLocaleTimeString().slice(0,5) : ''}</div>
+          <div class="chat-status">${chat.lastMessage?.senderId === currentUser?.id ? '✓' : ''}</div>
+        `;
+
+        item.appendChild(avatarDiv);
+        item.appendChild(infoDiv);
+        item.appendChild(metaDiv);
+
+        list.appendChild(item);
+      });
+    }
+
+    function openChat(chatId) {
+      currentChatId = chatId;
+      document.getElementById('chats-view').style.display = 'none';
+      document.getElementById('chat-window').style.display = 'flex';
+      socket.emit('joinChat', chatId);
+      loadMessages(chatId);
+    }
+
+    function closeChat() {
+      currentChatId = null;
+      document.getElementById('chat-window').style.display = 'none';
+      document.getElementById('chats-view').style.display = 'block';
+    }
+
+    function loadMessages(chatId) {
+      // Заглушка: можно запросить с сервера
+      messages = [];
+      document.getElementById('messages-area').innerHTML = '';
+    }
+
+    function renderMessage(message) {
+      const area = document.getElementById('messages-area');
+      const isOwn = message.senderId === currentUser?.id;
+
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${isOwn ? 'own' : 'other'}`;
+      msgDiv.dataset.messageId = message.id;
+
+      const bubble = document.createElement('div');
+      bubble.className = 'message-bubble';
+      bubble.textContent = message.content;
+
+      const time = document.createElement('div');
+      time.className = 'message-time';
+      time.textContent = new Date(message.timestamp).toLocaleTimeString().slice(0,5);
+
+      msgDiv.appendChild(bubble);
+      msgDiv.appendChild(time);
+      area.appendChild(msgDiv);
+      area.scrollTop = area.scrollHeight;
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('message-input');
+      const content = input.value.trim();
+      if (!content || !currentChatId) return;
+
+      socket.emit('sendMessage', {
+        chatId: currentChatId,
+        content,
+        type: 'text'
+      });
+
+      input.value = '';
+      document.getElementById('send-voice-btn').textContent = '🎤';
+    }
+
+    function handleTyping() {
+      const input = document.getElementById('message-input');
+      if (input.value.length > 0) {
+        document.getElementById('send-voice-btn').textContent = '➤';
+      } else {
+        document.getElementById('send-voice-btn').textContent = '🎤';
+      }
+      // Отправка статуса печатания (можно добавить debounce)
+      if (socket && currentChatId) {
+        socket.emit('typing', { chatId: currentChatId, isTyping: input.value.length > 0 });
+      }
+    }
+
+    // ==================== НАВИГАЦИЯ ПО ОСНОВНОМУ ЭКРАНУ ====================
+    function showMainScreen() {
+      document.getElementById('auth-screen').classList.remove('active');
+      document.getElementById('main-screen').classList.add('active');
+    }
+
+    function showAuthScreen() {
+      document.getElementById('main-screen').classList.remove('active');
+      document.getElementById('auth-screen').classList.add('active');
+    }
+
+    function switchView(view) {
+      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+      document.querySelector(`[data-view="${view}"]`).classList.add('active');
+
+      document.getElementById('chats-view').style.display = 'none';
+      document.getElementById('contacts-view').style.display = 'none';
+      document.getElementById('settings-view').style.display = 'none';
+
+      if (view === 'chats') {
+        document.getElementById('chats-view').style.display = 'block';
+        document.getElementById('screen-title').textContent = 'Чаты';
+        loadChats();
+      } else if (view === 'contacts') {
+        document.getElementById('contacts-view').style.display = 'block';
+        document.getElementById('screen-title').textContent = 'Контакты';
+      } else if (view === 'settings') {
+        document.getElementById('settings-view').style.display = 'block';
+        document.getElementById('screen-title').textContent = 'Настройки';
+      }
+    }
+
+    // ==================== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ====================
+    function toggleEditMode() {
+      editMode = !editMode;
+      if (editMode) {
+        document.getElementById('multi-select-bar').style.display = 'flex';
+      } else {
+        document.getElementById('multi-select-bar').style.display = 'none';
+        selectedChats.clear();
+      }
+    }
+
+    function filterChats() {
+      // Логика фильтрации
+    }
+
+    function createNewChat() {
+      alert('Создание нового чата (заглушка)');
+    }
+
+    function showAttachMenu() {
+      alert('Меню вложений (заглушка)');
+    }
+
+    function showEmojiPicker() {
+      alert('Выбор эмодзи (заглушка)');
+    }
+  </script>
+</body>
+</html>
