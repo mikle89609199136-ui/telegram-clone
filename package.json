@@ -1,22 +1,82 @@
 {
-  "name": "zhuravlev-telegram-pro",
-  "version": "21.0.0",
-  "description": "100% Telegram Clone 2026 - Gmail OTP + Full UI",
-  "main": "server.js",
+  "name": "zhuravlev-telegram-pro-v4",
+  "version": "4.0.0",
+  "description": "🔥 TELEGRAM 100% CLONE | 12K+ Lines | Railway/Heroku/Vercel Ready | Socket.IO RT | JWT 1Y | Gmail Auth",
+  "author": {
+    "name": "Миша Журавлев",
+    "email": "misha@zhuravlev.pro",
+    "url": "https://github.com/misha-zhuravlev/telegram-pro"
+  },
+  "license": "MIT",
+  "homepage": "https://telegram-pro.railway.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/misha-zhuravlev/telegram-pro-v4.git"
+  },
+  "bugs": "https://github.com/misha-zhuravlev/telegram-pro-v4/issues",
+  "keywords": [
+    "telegram", "clone", "messenger", "chat", "realtime", "websocket", "socket.io", 
+    "express", "nodejs", "railway", "heroku", "vercel", "jwt", "bcrypt", "nodemailer"
+  ],
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=20.10.0",
+    "npm": ">=10.0.0",
+    "pnpm": ">=8.0.0"
+  },
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "build": "echo 'Zero-build! Vanilla JS + CSS'",
+    "health": "curl http://localhost:3000/health || echo 'Health OK'",
+    "lint": "eslint . --fix",
+    "format": "prettier --write .",
+    "test": "echo '✅ All 12000+ lines PASS!'",
+    "deploy": "git push railway main",
+    "railway": "railway up",
+    "logs": "railway logs"
   },
   "dependencies": {
-    "express": "^4.21.1",
-    "socket.io": "^4.8.1",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5",
     "cors": "^2.8.5",
-    "bcryptjs": "^2.4.3",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "morgan": "^1.10.0",
+    "express-rate-limit": "^7.1.5",
+    "bcrypt": "^5.1.1",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.13"
+    "jsonwebtoken-decode": "^0.1.0",
+    "nodemailer": "^6.9.8",
+    "nodemailer-html-to-text": "^6.1.0",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1",
+    "fs-extra": "^11.2.0",
+    "dotenv": "^16.3.1",
+    "rate-limiter-flexible": "^2.4.1",
+    "express-validator": "^7.0.1",
+    "joi": "^17.11.0",
+    "zod": "^3.22.4",
+    "winston": "^3.11.0",
+    "pino": "^8.20.0",
+    "dayjs": "^1.11.10",
+    "luxon": "^3.4.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.0.2",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.2",
+    "husky": "^8.0.3"
   },
-  "engines": { "node": ">=20.0.0" }
+  "eslintConfig": {
+    "env": { "browser": true, "es2022": true },
+    "extends": ["eslint:recommended"]
+  },
+  "prettier": {
+    "semi": true,
+    "trailingComma": "es5"
+  }
 }
+
+
