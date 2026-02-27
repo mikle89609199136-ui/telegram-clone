@@ -1,4 +1,4 @@
-// server.js — точка входа Express + Socket.IO + маршруты
+// server.js — основной сервер (без обязательной почты)
 
 require('dotenv').config();
 const express = require('express');
@@ -11,7 +11,7 @@ const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 
-// Импорт собственных модулей
+// Импорт модулей
 const authRoutes = require('./auth');
 const dataModule = require('./data');
 const socketHandler = require('./index');
@@ -19,22 +19,23 @@ const socketHandler = require('./index');
 const app = express();
 const server = http.createServer(app);
 
-// Конфигурация
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
+
+// Проверяем только JWT_SECRET (почта теперь не обязательна)
 if (!JWT_SECRET) {
-  console.error('❌ JWT_SECRET не задан! Укажите его в .env');
+  console.error('❌ JWT_SECRET не задан! Укажите его в .env или в переменных Railway');
   process.exit(1);
 }
 
-// Создаём необходимые директории
+// Создаём директории для данных и загрузок
 const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 fs.ensureDirSync(DATA_DIR);
 fs.ensureDirSync(path.join(UPLOADS_DIR, 'avatars'));
 fs.ensureDirSync(path.join(UPLOADS_DIR, 'files'));
 
-// Middleware безопасности и оптимизации
+// Middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -59,14 +60,14 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
-// Статические файлы: фронтенд и загрузки
+// Статические файлы
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
-// Подключаем маршруты аутентификации
+// Маршруты аутентификации
 app.use('/api/auth', authRoutes);
 
-// Эндпоинт проверки здоровья для Railway
+// Эндпоинт проверки здоровья
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: '🟢 Zhuravlev Messenger работает',
@@ -84,14 +85,14 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
 
-// Запуск сервера на 0.0.0.0 (обязательно для Railway)
+// Запуск сервера (обязательно 0.0.0.0 для Railway)
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   🚀 Zhuravlev Telegram Clone запущен!
   🌐 http://localhost:${PORT}
-  📧 Почта: ${process.env.EMAIL_USER ? '✅' : '❌ не настроена'}
+  📧 Почта: ${process.env.EMAIL_USER ? '✅ настроена' : '⚠️ не настроена (восстановление пароля отключено)'}
+  🔑 JWT_SECRET: ✅
   ⚡ WebSocket: активен
   📁 Данные: ${DATA_DIR}
   `);
 });
-
