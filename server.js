@@ -1,4 +1,4 @@
-// server.js — финальная версия (исправлены все ошибки)
+// server.js — финальная версия с исправленным CSP
 
 require('dotenv').config();
 const express = require('express');
@@ -38,17 +38,29 @@ fs.ensureDirSync(DATA_DIR);
 fs.ensureDirSync(path.join(UPLOADS_DIR, 'avatars'));
 fs.ensureDirSync(path.join(UPLOADS_DIR, 'files'));
 
-// Middleware
+// ✅ Исправленный helmet для разрешения скриптов с CDN, inline-скриптов и обработчиков
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",          // разрешаем inline-скрипты
+        "'unsafe-eval'",            // может понадобиться для некоторых библиотек (не обязательно)
+        "https://cdn.socket.io"     // разрешаем загрузку Socket.IO с CDN
+      ],
+      scriptSrcAttr: ["'unsafe-inline'"], // разрешаем onclick и другие атрибуты
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https://img2.pngindir.com"],
+      imgSrc: [
+        "'self'",
+        "data:",
+        "https://img2.pngindir.com" // разрешаем аватарку журавля
+      ],
+      connectSrc: ["'self'", "https://cdn.socket.io"], // для WebSocket
     }
   }
 }));
+
 app.use(compression());
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
@@ -66,7 +78,7 @@ app.use('/api/', apiLimiter);
 // Статические файлы из папки public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ✅ Подключаем маршруты аутентификации по пути /api (теперь /api/register, /api/login и т.д.)
+// Подключаем маршруты аутентификации
 app.use('/api', authRoutes);
 
 // Эндпоинт здоровья
@@ -78,7 +90,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ✅ Для всех остальных GET-запросов отдаём chat.html (поддержка SPA)
+// Для всех остальных GET-запросов отдаём chat.html
 app.get('*', (req, res) => {
   const chatPath = path.join(__dirname, 'public', 'chat.html');
   if (fs.existsSync(chatPath)) {
