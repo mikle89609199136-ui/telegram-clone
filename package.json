@@ -1,7 +1,7 @@
 {
   "name": "zhuravlev-telegram-pro",
-  "version": "15.0.0",
-  "description": "Zhuravlev Telegram Pro - Полный клон Telegram 2026",
+  "version": "16.0.0",
+  "description": "Полный Telegram клон 2026 с регистрацией по почте",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,7 +12,8 @@
     "socket.io": "^4.8.0",
     "cors": "^2.8.5",
     "jsonwebtoken": "^9.0.2",
-    "bcryptjs": "^2.4.3"
+    "bcryptjs": "^2.4.3",
+    "nodemailer": "^6.9.15"
   },
   "engines": {
     "node": ">=20.0.0"
