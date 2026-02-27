@@ -1,223 +1,194 @@
-// 📦 ИМПОРТЫ - основные библиотеки
-const express = require('express');        // Веб-сервер
-const http = require('http');              // HTTP сервер для Socket.io
-const socketIo = require('socket.io');     // Real-time связь (сообщения мгновенно)
-const cors = require('cors');              // Разрешение CORS (фронт ↔ сервер)
-const fs = require('fs');                  // Работа с файлами (база данных JSON)
-const path = require('path');              // Пути к файлам
-const bcrypt = require('bcryptjs');        // Хэширование паролей (безопасность)
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const bcrypt = require('bcryptjs');
 
-console.log('🚀 Запуск Zhuravlev Telegram Pro v17.0...');
-
-// 🏗️ СОЗДАНИЕ СЕРВЕРА
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { 
-    cors: { origin: "*" }  // Разрешаем подключения с любого сайта
-});
+const io = socketIo(server, { cors: { origin: "*" } });
 
-// 🔧 МИДЛВАР - обработка запросов
-app.use(cors());                           // ✅ CORS для фронтенда
-app.use(express.json());                   // ✅ Парсинг JSON в POST запросах
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
 
-// 🌐 РЕЙЛВЕЙ ДЕПЛОЙ - обязательные настройки
-const PORT = process.env.PORT || 3000;     // Порт Railway или 3000 локально
-
-// 💾 БАЗА ДАННЫХ - папка data/ с JSON файлами
+const PORT = process.env.PORT || 3000;
 const DATA_DIR = './data';
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR);
-    console.log('📁 Создана папка data/');
-}
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// 📁 ФАЙЛЫ БАЗЫ ДАННЫХ
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
-const RECOVERY_FILE = path.join(DATA_DIR, 'recovery.json');
-
-// 🆕 ИНИЦИАЛИЗАЦИЯ - создаем пустые файлы если нет
-[USERS_FILE, CHATS_FILE, MESSAGES_FILE, RECOVERY_FILE].forEach(file => {
-    if (!fs.existsSync(file)) {
-        fs.writeFileSync(file, '[]');
-        console.log(`📄 Создан ${path.basename(file)}`);
-    }
-});
-
-// 🔄 ФУНКЦИИ РАБОТЫ С JSON
-const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
-const writeJson = (file, data) => {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
-    console.log(`💾 Сохранено в ${path.basename(file)}: ${data.length} записей`);
+const files = {
+    users: path.join(DATA_DIR, 'users.json'),
+    chats: path.join(DATA_DIR, 'chats.json'),
+    messages: path.join(DATA_DIR, 'messages.json'),
+    recovery: path.join(DATA_DIR, 'recovery.json'),
+    blocks: path.join(DATA_DIR, 'blocks.json'),
+    folders: path.join(DATA_DIR, 'folders.json')
 };
 
-// 📊 ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-let users = readJson(USERS_FILE);
-let chats = readJson(CHATS_FILE);
-let messages = readJson(MESSAGES_FILE);
-
-// ✅ HEALTH CHECK для Railway деплоя
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(),
-        users: users.length,
-        chats: chats.length,
-        messages: messages.length
-    });
-});
-console.log('✅ Health check готов: /health');
-
-// 🏠 ГЛАВНАЯ СТРАНИЦА - отдаем chat.html
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'chat.html'));
+Object.values(files).forEach(file => {
+    if (!fs.existsSync(file)) fs.writeFileSync(file, '[]');
 });
 
-// 🔐 API АВТОРИЗАЦИИ
+const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8') || '[]');
+const writeJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
 
-// Регистрация
+let users = readJson(files.users);
+let chats = readJson(files.chats);
+let messages = readJson(files.messages);
+let recoveryCodes = readJson(files.recovery);
+let blocks = readJson(files.blocks);
+let folders = readJson(files.folders) || [{ id: 'all', name: 'Все', chats: [] }];
+
+// Health check для Railway
+app.get('/health', (req, res) => res.json({ status: 'ok', users: users.length }));
+
+// Главная страница - Telegram Pro интерфейс
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// API Регистрация
 app.post('/api/register', async (req, res) => {
     const { email, username, password } = req.body;
     
-    // Проверка уникальности
     if (users.find(u => u.email === email || u.username === username)) {
-        return res.status(400).json({ error: '👤 Пользователь уже существует' });
+        return res.json({ error: 'Пользователь уже существует' });
     }
     
-    // Хэшируем пароль
-    const hashedPassword = await bcrypt.hash(password, 12);
-    
-    // Создаем пользователя
+    const hashed = await bcrypt.hash(password, 12);
     const user = {
         id: Date.now().toString(),
-        email,
-        username: username.startsWith('@') ? username.slice(1) : username,
+        email, 
+        username: username.replace('@', ''),
         name: username.split(' ')[0],
-        password: hashedPassword,
-        avatarColor: `hsl(${Math.random() * 360}, 70%, 60%)`,
+        password: hashed,
+        avatar: `https://ui-avatars.com/api/?name=${username}&background=34c759&color=fff`,
         created: new Date().toISOString(),
         settings: {
             notifications: true,
-            theme: 'light',
+            theme: 'blue',
             language: 'ru',
-            privacy: { lastSeen: 'all', profilePhoto: 'all' }
+            privacy: { lastSeen: 'all', photo: 'all' },
+            phone: '',
+            birthday: ''
         }
     };
     
     users.push(user);
-    writeJson(USERS_FILE, users);
+    writeJson(files.users, users);
     
-    // Токен для localStorage (1 год)
-    const token = Buffer.from(JSON.stringify({ id: user.id, username: user.username })).toString('base64');
+    // Авто-создаем приветственный чат
+    const welcomeChat = {
+        id: 'welcome_' + Date.now(),
+        name: 'Telegram Pro',
+        type: 'service',
+        userId: user.id,
+        created: new Date().toISOString(),
+        lastMessage: 'Добро пожаловать в Telegram Pro! 🎉',
+        lastTime: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        unread: 1,
+        pinned: true,
+        members: [user.id]
+    };
+    chats.push(welcomeChat);
+    writeJson(files.chats, chats);
     
-    console.log(`👤 Новый пользователь: ${user.username}`);
+    const token = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 365*24*60*60*1000 })).toString('base64');
     res.json({ success: true, token, user });
 });
 
-// Вход
+// API Login
 app.post('/api/login', async (req, res) => {
-    const { login, password } = req.body; // login = username или email
-    
-    const user = users.find(u => 
-        u.username === login || u.email === login
-    );
+    const { username, password } = req.body;
+    const user = users.find(u => u.username === username);
     
     if (!user || !await bcrypt.compare(password, user.password)) {
-        return res.status(400).json({ error: '❌ Неверный логин или пароль' });
+        return res.json({ error: 'Неверный логин или пароль' });
     }
     
-    const token = Buffer.from(JSON.stringify({ id: user.id, username: user.username })).toString('base64');
-    
-    console.log(`🔓 Вход: ${user.username}`);
+    const token = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 365*24*60*60*1000 })).toString('base64');
     res.json({ success: true, token, user });
 });
 
-// 🔢 КОДЫ ВОССТАНОВЛЕНИЯ ПАРОЛЯ
-app.post('/api/send-code', (req, res) => {
+// API Forgot Password + OTP
+app.post('/api/send-otp', (req, res) => {
     const { email } = req.body;
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     
-    // Сохраняем код (5 минут жизни)
-    let recovery = readJson(RECOVERY_FILE);
-    recovery = recovery.filter(r => r.email !== email); // Удаляем старые
-    recovery.push({ 
-        email, 
-        code, 
-        expires: Date.now() + 5 * 60 * 1000 // 5 минут
-    });
-    writeJson(RECOVERY_FILE, recovery);
+    recoveryCodes = recoveryCodes.filter(r => r.email !== email);
+    recoveryCodes.push({ email, code, expires: Date.now() + 5*60*1000 });
+    writeJson(files.recovery, recoveryCodes);
     
-    // ЛОГ В КОНСОЛЬ (для демо, в продакшене - email)
-    console.log(`💌 КОД ${code} для ${email}`);
-    
-    res.json({ success: true, code }); // Возвращаем код для фронта (демо)
+    console.log(`🔢 OTP ${code} для ${email}`);
+    res.json({ success: true });
 });
 
-app.post('/api/verify-code', (req, res) => {
+app.post('/api/verify-otp', (req, res) => {
     const { email, code } = req.body;
-    const recovery = readJson(RECOVERY_FILE);
-    
-    const record = recovery.find(r => 
-        r.email === email && 
-        r.code === code && 
-        Date.now() < r.expires
-    );
+    const record = recoveryCodes.find(r => r.email === email && r.code === code && Date.now() < r.expires);
     
     if (record) {
         res.json({ success: true });
     } else {
-        res.status(400).json({ error: '❌ Неверный или просроченный код' });
+        res.json({ error: 'Неверный код' });
     }
 });
 
-// 📱 API ЧАТОВ
-
-// Список чатов
-app.get('/api/chats', (req, res) => {
-    res.json(chats);
+app.post('/api/reset-password', async (req, res) => {
+    const { email, password } = req.body;
+    const user = users.find(u => u.email === email);
+    
+    if (user) {
+        user.password = await bcrypt.hash(password, 12);
+        writeJson(files.users, users);
+        res.json({ success: true });
+    } else {
+        res.json({ error: 'Пользователь не найден' });
+    }
 });
 
-// Создать чат
+// API Чаты
+app.get('/api/chats', (req, res) => {
+    const userChats = chats.filter(c => c.members.includes(getUserId(req)));
+    res.json(userChats);
+});
+
 app.post('/api/chats', (req, res) => {
-    const { name, userId } = req.body;
-    
     const chat = {
         id: Date.now().toString(),
-        name,
-        userId,
+        name: req.body.name,
+        type: req.body.type || 'private',
+        userId: getUserId(req),
+        members: req.body.members || [getUserId(req)],
         created: new Date().toISOString(),
         lastMessage: '',
         lastTime: '',
         unread: 0,
-        readStatus: '',
         pinned: false,
-        members: [userId]
+        notifications: true
     };
-    
     chats.push(chat);
-    writeJson(CHATS_FILE, chats);
-    
-    console.log(`💬 Создан чат: ${chat.name}`);
+    writeJson(files.chats, chats);
     res.json(chat);
 });
 
-// Сообщения чата
+function getUserId(req) {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+        try {
+            return JSON.parse(Buffer.from(token, 'base64')).id;
+        } catch {}
+    }
+    return null;
+}
+
 app.get('/api/messages/:chatId', (req, res) => {
     const chatMessages = messages.filter(m => m.chatId === req.params.chatId);
     res.json(chatMessages.sort((a, b) => new Date(a.time) - new Date(b.time)));
 });
 
-// 🔥 SOCKET.IO - РЕАЛТАЙМ СООБЩЕНИЯ
+// Socket.IO
 io.on('connection', (socket) => {
-    console.log(`👤 Подключение: ${socket.id}`);
-    
-    // Клиент присоединяется к своей комнате
-    socket.on('join', (userId) => {
-        socket.join(userId);
-        console.log(`📡 ${userId} присоединился к комнате`);
-    });
-    
-    // 💬 НОВОЕ СООБЩЕНИЕ
     socket.on('message', (data) => {
         const message = {
             id: Date.now().toString(),
@@ -226,42 +197,25 @@ io.on('connection', (socket) => {
             name: data.name,
             text: data.text,
             time: new Date().toISOString(),
-            read: false
+            read: false,
+            edited: false
         };
         
-        // Сохраняем сообщение
         messages.push(message);
-        writeJson(MESSAGES_FILE, messages);
+        writeJson(files.messages, messages);
         
-        // Обновляем чат (последнее сообщение)
         const chat = chats.find(c => c.id === data.chatId);
         if (chat) {
-            chat.lastMessage = data.text.substring(0, 50);
+            chat.lastMessage = data.text.substring(0, 30);
             chat.lastTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-            writeJson(CHATS_FILE, chats);
+            writeJson(files.chats, chats);
         }
         
-        // ✅ ОТПРАВЛЯЕМ ВСЕМ в чате
         io.emit('message', message);
-        io.emit('chats'); // Обновляем списки чатов
-        
-        console.log(`💬 [${data.chatId}] ${data.name}: ${data.text}`);
-    });
-    
-    // ❌ ОТКЛЮЧЕНИЕ
-    socket.on('disconnect', () => {
-        console.log(`👋 Отключился: ${socket.id}`);
+        io.emit('chats-update');
     });
 });
 
-// 🟢 ЗАПУСК СЕРВЕРА
 server.listen(PORT, () => {
-    console.log(`\n🎉 ZHURAVLEV TELEGRAM PRO v17.0`);
-    console.log(`📡 Сервер: http://localhost:${PORT}`);
-    console.log(`✅ Railway: http://localhost:${PORT}/health`);
-    console.log(`📊 База: ${DATA_DIR}/`);
-    console.log(`👥 Пользователей: ${users.length}`);
-    console.log(`💬 Чатов: ${chats.length}`);
-    console.log(`📨 Сообщений: ${messages.length}`);
-    console.log(`\n🚀 Готов к деплою! npm start`);
+    console.log(`🚀 Telegram Pro v18.0 на порту ${PORT}`);
 });
