@@ -5,6 +5,9 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
+const CryptoJS = require('crypto-js');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,7 +15,7 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static('.'));
 
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = './data';
@@ -23,8 +26,7 @@ const files = {
     chats: path.join(DATA_DIR, 'chats.json'),
     messages: path.join(DATA_DIR, 'messages.json'),
     recovery: path.join(DATA_DIR, 'recovery.json'),
-    blocks: path.join(DATA_DIR, 'blocks.json'),
-    folders: path.join(DATA_DIR, 'folders.json')
+    blocks: path.join(DATA_DIR, 'blocks.json')
 };
 
 Object.values(files).forEach(file => {
@@ -39,15 +41,29 @@ let chats = readJson(files.chats);
 let messages = readJson(files.messages);
 let recoveryCodes = readJson(files.recovery);
 let blocks = readJson(files.blocks);
-let folders = readJson(files.folders) || [{ id: 'all', name: 'Все', chats: [] }];
 
-// Health check для Railway
-app.get('/health', (req, res) => res.json({ status: 'ok', users: users.length }));
+const JWT_SECRET = 'ZhuravlevPro2026Secret!';
+const ENCRYPTION_KEY = 'ZhuravlevPro2026!@#';
 
-// Главная страница - Telegram Pro интерфейс
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+// 🚀 Health Check
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// API Регистрация
+// 📱 Главная страница
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'chat.html')));
+
+// 🔐 Middleware авторизации
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Access denied' });
+    
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Invalid token' });
+        req.user = user; next();
+    });
+};
+
+// 📝 Регистрация
 app.post('/api/register', async (req, res) => {
     const { email, username, password } = req.body;
     
@@ -55,49 +71,35 @@ app.post('/api/register', async (req, res) => {
         return res.json({ error: 'Пользователь уже существует' });
     }
     
-    const hashed = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const userId = Date.now().toString();
     const user = {
-        id: Date.now().toString(),
-        email, 
-        username: username.replace('@', ''),
-        name: username.split(' ')[0],
-        password: hashed,
-        avatar: `https://ui-avatars.com/api/?name=${username}&background=34c759&color=fff`,
-        created: new Date().toISOString(),
+        id: userId, email, username: username.replace('@', ''),
+        name: username.split(' ')[0], password: hashedPassword,
+        avatar: `https://ui-avatars.com/api/?name=${username}&background=34c759&color=fff&size=128`,
         settings: {
-            notifications: true,
-            theme: 'blue',
-            language: 'ru',
-            privacy: { lastSeen: 'all', photo: 'all' },
-            phone: '',
-            birthday: ''
-        }
+            notifications: true, theme: 'light', language: 'ru',
+            privacy: { lastSeen: 'all', photo: 'all' }, phone: '', birthday: ''
+        },
+        created: new Date().toISOString()
     };
     
-    users.push(user);
-    writeJson(files.users, users);
+    users.push(user); writeJson(files.users, users);
     
-    // Авто-создаем приветственный чат
+    // Приветственный чат
     const welcomeChat = {
-        id: 'welcome_' + Date.now(),
-        name: 'Telegram Pro',
-        type: 'service',
-        userId: user.id,
-        created: new Date().toISOString(),
-        lastMessage: 'Добро пожаловать в Telegram Pro! 🎉',
+        id: `welcome_${userId}`, name: 'Zhuravlev Bot', type: 'service',
+        userId: userId, members: [userId], lastMessage: 'Welcome to Zhuravlev Messenger! 🎉',
         lastTime: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
-        unread: 1,
-        pinned: true,
-        members: [user.id]
+        unread: 1, pinned: true, lastAuthor: 'bot'
     };
-    chats.push(welcomeChat);
-    writeJson(files.chats, chats);
+    chats.push(welcomeChat); writeJson(files.chats, chats);
     
-    const token = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 365*24*60*60*1000 })).toString('base64');
+    const token = jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '1y' });
     res.json({ success: true, token, user });
 });
 
-// API Login
+// 🔑 Вход
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     const user = users.find(u => u.username === username);
@@ -106,88 +108,61 @@ app.post('/api/login', async (req, res) => {
         return res.json({ error: 'Неверный логин или пароль' });
     }
     
-    const token = Buffer.from(JSON.stringify({ id: user.id, exp: Date.now() + 365*24*60*60*1000 })).toString('base64');
+    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '1y' });
     res.json({ success: true, token, user });
 });
 
-// API Forgot Password + OTP
+// 🔢 OTP код
 app.post('/api/send-otp', (req, res) => {
     const { email } = req.body;
     const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = Date.now() + 5 * 60 * 1000; // 5 минут
     
     recoveryCodes = recoveryCodes.filter(r => r.email !== email);
-    recoveryCodes.push({ email, code, expires: Date.now() + 5*60*1000 });
+    recoveryCodes.push({ email, code, expires });
     writeJson(files.recovery, recoveryCodes);
     
+    // TODO: Отправка на реальный email
     console.log(`🔢 OTP ${code} для ${email}`);
     res.json({ success: true });
 });
 
 app.post('/api/verify-otp', (req, res) => {
     const { email, code } = req.body;
-    const record = recoveryCodes.find(r => r.email === email && r.code === code && Date.now() < r.expires);
-    
-    if (record) {
-        res.json({ success: true });
-    } else {
-        res.json({ error: 'Неверный код' });
-    }
+    const record = recoveryCodes.find(r => 
+        r.email === email && r.code === code && Date.now() < r.expires
+    );
+    res.json({ success: !!record });
 });
 
 app.post('/api/reset-password', async (req, res) => {
-    const { email, password } = req.body;
+    const { email, newPassword } = req.body;
     const user = users.find(u => u.email === email);
+    if (!user) return res.json({ error: 'Пользователь не найден' });
     
-    if (user) {
-        user.password = await bcrypt.hash(password, 12);
-        writeJson(files.users, users);
-        res.json({ success: true });
-    } else {
-        res.json({ error: 'Пользователь не найден' });
-    }
+    user.password = await bcrypt.hash(newPassword, 12);
+    writeJson(files.users, users);
+    res.json({ success: true });
 });
 
-// API Чаты
-app.get('/api/chats', (req, res) => {
-    const userChats = chats.filter(c => c.members.includes(getUserId(req)));
+// 📋 Чаты
+app.get('/api/chats', authenticateToken, (req, res) => {
+    const userChats = chats.filter(c => c.userId === req.user.id || c.members?.includes(req.user.id));
     res.json(userChats);
 });
 
-app.post('/api/chats', (req, res) => {
-    const chat = {
-        id: Date.now().toString(),
-        name: req.body.name,
-        type: req.body.type || 'private',
-        userId: getUserId(req),
-        members: req.body.members || [getUserId(req)],
-        created: new Date().toISOString(),
-        lastMessage: '',
-        lastTime: '',
-        unread: 0,
-        pinned: false,
-        notifications: true
-    };
-    chats.push(chat);
-    writeJson(files.chats, chats);
-    res.json(chat);
-});
-
-function getUserId(req) {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (token) {
-        try {
-            return JSON.parse(Buffer.from(token, 'base64')).id;
-        } catch {}
+// 💬 Сообщения
+app.get('/api/messages/:chatId', authenticateToken, (req, res) => {
+    if (!chats.find(c => c.id === req.params.chatId && 
+        (c.userId === req.user.id || c.members?.includes(req.user.id)))) {
+        return res.status(403).json({ error: 'Access denied' });
     }
-    return null;
-}
-
-app.get('/api/messages/:chatId', (req, res) => {
+    
     const chatMessages = messages.filter(m => m.chatId === req.params.chatId);
     res.json(chatMessages.sort((a, b) => new Date(a.time) - new Date(b.time)));
 });
 
-// Socket.IO
+// 📶 Socket.IO
 io.on('connection', (socket) => {
     socket.on('message', (data) => {
         const message = {
@@ -195,10 +170,9 @@ io.on('connection', (socket) => {
             chatId: data.chatId,
             userId: data.userId,
             name: data.name,
-            text: data.text,
+            text: data.text, // Уже зашифровано на клиенте
             time: new Date().toISOString(),
-            read: false,
-            edited: false
+            read: false
         };
         
         messages.push(message);
@@ -208,14 +182,16 @@ io.on('connection', (socket) => {
         if (chat) {
             chat.lastMessage = data.text.substring(0, 30);
             chat.lastTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            chat.lastAuthor = data.userId;
+            chat.unread = (chat.unread || 0) + 1;
             writeJson(files.chats, chats);
         }
         
         io.emit('message', message);
-        io.emit('chats-update');
     });
 });
 
 server.listen(PORT, () => {
-    console.log(`🚀 Telegram Pro v18.0 на порту ${PORT}`);
+    console.log(`🚀 Telegram Pro v20.0: http://localhost:${PORT}`);
+    console.log(`✅ Health: http://localhost:${PORT}/health`);
 });
