@@ -8,8 +8,8 @@ const nodemailer = require('nodemailer');
 const { v4: uuidv4 } = require('uuid');
 const { getData, saveData } = require('./data');
 
-// Конфигурация почты
-const transporter = nodemailer.createTransporter({
+// Конфигурация почты (исправлено: createTransport, а не createTransporter)
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
