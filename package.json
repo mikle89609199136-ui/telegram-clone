@@ -1,33 +1,11 @@
 {
   "name": "zhuravlev-telegram-pro",
-  "version": "20.0.0",
-  "description": "🚀 Telegram Pro v20 - Полный клон 2026 (Мобильный + ПК WebK)",
+  "version": "21.0.0",
+  "description": "100% Telegram Clone 2026 - Gmail OTP + Full UI",
   "main": "server.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "build": "echo 'Telegram Pro v20.0 built successfully!'",
-    "deploy": "npm ci && npm run build && npm start",
-    "test": "node test-server.js"
-  },
-  "author": {
-    "name": "Михаил Журавлев",
-    "email": "misha@zhuravlev.pro",
-    "url": "https://telegram-clone-production-1fd4.up.railway.app"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/zhuravlev/telegram-pro-v20"
-  },
-  "homepage": "https://telegram-clone-production-1fd4.up.railway.app",
-  "bugs": {
-    "url": "https://github.com/zhuravlev/telegram-pro-v20/issues"
-  },
-  "engines": {
-    "node": ">=20.10.0",
-    "npm": ">=10.2.0"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.21.1",
@@ -35,23 +13,10 @@
     "cors": "^2.8.5",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
-    "crypto-js": "^4.2.0",
-    "nodemailer": "^6.9.13",
-    "helmet": "^7.1.0",
-    "express-rate-limit": "^7.2.0",
-    "compression": "^1.7.4"
+    "nodemailer": "^6.9.13"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
   },
-  "keywords": [
-    "telegram", "messenger", "chat", "realtime", "socket.io", 
-    "webk", "pwa", "mobile", "desktop", "encryption"
-  ],
-  "funding": {
-    "type": "paypal",
-    "url": "https://paypal.me/zhuravlevpro"
-  },
-  "enginesStrict": true,
-  "preferGlobal": true
+  "engines": { "node": ">=20.0.0" }
 }
