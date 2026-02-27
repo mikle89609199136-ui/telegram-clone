@@ -4,8 +4,8 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const server = http.createServer(app);
@@ -13,112 +13,217 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static(__dirname));
 
-// Railway ready
+// Railway config
 const PORT = process.env.PORT || 3000;
-
-// Data directory
 const DATA_DIR = './data';
+
 if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR);
+    fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Data files
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
+const dataFiles = {
+    users: path.join(DATA_DIR, 'users.json'),
+    chats: path.join(DATA_DIR, 'chats.json'),
+    messages: path.join(DATA_DIR, 'messages.json'),
+    recovery: path.join(DATA_DIR, 'recovery.json')
+};
 
-// Init data
-if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify([]));
-if (!fs.existsSync(CHATS_FILE)) fs.writeFileSync(CHATS_FILE, JSON.stringify([]));
-if (!fs.existsSync(MESSAGES_FILE)) fs.writeFileSync(MESSAGES_FILE, JSON.stringify([]));
-
-const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
-const writeJson = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
-
-let users = readJson(USERS_FILE);
-let chats = readJson(CHATS_FILE);
-let messages = readJson(MESSAGES_FILE);
-
-// Health check for Railway
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
-
-// Serve chat.html
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'chat.html'));
+Object.values(dataFiles).forEach(file => {
+    if (!fs.existsSync(file)) {
+        fs.writeFileSync(file, '[]');
+    }
 });
 
-// Auth routes
-app.post('/register', async (req, res) => {
+const readData = file => JSON.parse(fs.readFileSync(file, 'utf8'));
+const writeData = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+
+// Email transporter (для production используй реальные SMTP настройки)
+const transporter = nodemailer.createTransporter({
+    jsonTransport: true // Только логирование для демо
+});
+
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// Главная страница
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// API Регистрация/Вход
+app.post('/api/register', async (req, res) => {
     const { email, username, password } = req.body;
+    
+    let users = readData(dataFiles.users);
+    
     if (users.find(u => u.email === email || u.username === username)) {
         return res.status(400).json({ error: 'Пользователь уже существует' });
     }
-    const hashed = await bcrypt.hash(password, 10);
+    
+    const hashedPassword = await bcrypt.hash(password, 10);
     const user = {
         id: Date.now().toString(),
-        email, username, password: hashed, name: username.split(' ')[0],
-        created: new Date().toISOString()
+        email,
+        username,
+        password: hashedPassword,
+        name: username.split('@')[0],
+        avatarColor: `hsl(${Math.random() * 360}, 70%, 60%)`,
+        created: new Date().toISOString(),
+        settings: { notifications: true, theme: 'light', language: 'ru' }
     };
-    users.push(user);
-    writeJson(USERS_FILE, users);
     
-    const token = jwt.sign({ id: user.id }, 'zhuravlev-secret-2026', { expiresIn: '1y' });
-    res.json({ token, user });
+    users.push(user);
+    writeData(dataFiles.users, users);
+    
+    res.json({ 
+        success: true, 
+        token: Buffer.from(JSON.stringify({ id: user.id, username: user.username })).toString('base64'),
+        user 
+    });
 });
 
-app.post('/login', async (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
+    let users = readData(dataFiles.users);
+    
     const user = users.find(u => u.username === username || u.email === username);
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!user || !await bcrypt.compare(password, user.password)) {
         return res.status(400).json({ error: 'Неверные данные' });
     }
-    const token = jwt.sign({ id: user.id }, 'zhuravlev-secret-2026', { expiresIn: '1y' });
-    res.json({ token, user });
+    
+    res.json({ 
+        success: true,
+        token: Buffer.from(JSON.stringify({ id: user.id, username: user.username })).toString('base64'),
+        user 
+    });
 });
 
-// API routes
+// Отправка кода восстановления (лог в консоль для демо)
+app.post('/api/send-code', (req, res) => {
+    const { email } = req.body;
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Сохраняем код
+    let recovery = readData(dataFiles.recovery);
+    recovery = recovery.filter(r => r.email !== email);
+    recovery.push({ email, code, expires: Date.now() + 5 * 60 * 1000 });
+    writeData(dataFiles.recovery, recovery);
+    
+    console.log(`💌 Код ${code} отправлен на ${email}`);
+    
+    // Имитация отправки email
+    transporter.sendMail({
+        from: 'no-reply@zhuravlev-telegram.pro',
+        to: email,
+        subject: 'Код подтверждения',
+        text: `Ваш код: ${code}`
+    }, (err, info) => {
+        if (err) console.error('Email error:', err);
+    });
+    
+    res.json({ success: true, code }); // Для демо возвращаем код
+});
+
+app.post('/api/verify-code', (req, res) => {
+    const { email, code } = req.body;
+    let recovery = readData(dataFiles.recovery);
+    
+    const record = recovery.find(r => r.email === email && r.code === code && Date.now() < r.expires);
+    if (record) {
+        res.json({ success: true });
+    } else {
+        res.status(400).json({ error: 'Неверный или просроченный код' });
+    }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+    const { email, newPassword } = req.body;
+    let users = readData(dataFiles.users);
+    
+    const user = users.find(u => u.email === email);
+    if (!user) return res.status(400).json({ error: 'Пользователь не найден' });
+    
+    user.password = await bcrypt.hash(newPassword, 10);
+    writeData(dataFiles.users, users);
+    
+    res.json({ success: true });
+});
+
+// API Чаты и сообщения
 app.get('/api/chats', (req, res) => {
+    const chats = readData(dataFiles.chats);
     res.json(chats);
 });
 
 app.get('/api/messages/:chatId', (req, res) => {
-    const chatMessages = messages.filter(m => m.chatId === req.params.chatId);
-    res.json(chatMessages);
+    const messages = readData(dataFiles.messages).filter(m => m.chatId === req.params.chatId);
+    res.json(messages.sort((a, b) => new Date(a.time) - new Date(b.time)));
+});
+
+// Создание чата
+app.post('/api/chats', (req, res) => {
+    const { name, userId } = req.body;
+    let chats = readData(dataFiles.chats);
+    
+    const chat = {
+        id: Date.now().toString(),
+        name,
+        userId,
+        created: new Date().toISOString(),
+        lastMessage: '',
+        lastTime: '',
+        unread: 0,
+        readStatus: '',
+        pinned: false
+    };
+    
+    chats.push(chat);
+    writeData(dataFiles.chats, chats);
+    res.json(chat);
 });
 
 // Socket.io
 io.on('connection', (socket) => {
-    socket.on('join', (userId) => {
-        socket.join(userId);
-        socket.emit('userId', userId);
-    });
+    console.log('👤 Пользователь подключился:', socket.id);
     
     socket.on('message', (data) => {
-        const msg = {
+        const message = {
             id: Date.now().toString(),
             chatId: data.chatId,
             userId: data.userId,
+            name: data.name,
             text: data.text,
-            time: new Date().toISOString()
+            time: new Date().toISOString(),
+            read: false
         };
-        messages.push(msg);
-        writeJson(MESSAGES_FILE, messages);
         
-        // Update last message in chat
+        let messages = readData(dataFiles.messages);
+        messages.push(message);
+        writeData(dataFiles.messages, messages);
+        
+        // Обновляем чат
+        let chats = readData(dataFiles.chats);
         const chat = chats.find(c => c.id === data.chatId);
         if (chat) {
-            chat.lastMessage = data.text;
-            chat.lastTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            writeJson(CHATS_FILE, chats);
+            chat.lastMessage = data.text.substring(0, 50);
+            chat.lastTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            writeData(dataFiles.chats, chats);
         }
         
-        io.to(data.chatId).emit('message', msg);
+        // Рассылаем всем в чате
+        io.emit('message', message);
         io.emit('chats');
+    });
+    
+    socket.on('disconnect', () => {
+        console.log('👤 Пользователь отключился:', socket.id);
     });
 });
 
 server.listen(PORT, () => {
-    console.log(`🚀 Zhuravlev Telegram Pro запущен на порту ${PORT}`);
+    console.log(`🚀 Zhuravlev Telegram Pro v16.0 запущен на порту ${PORT}`);
+    console.log(`📱 Главная: http://localhost:${PORT}`);
+    console.log(`✅ Railway готов: /health`);
 });
