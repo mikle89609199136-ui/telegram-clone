@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Zhuravlev Telegram</title>
   <style>
-    /* ========== ГЛОБАЛЬНЫЕ СТИЛИ (Telegram тема) ========== */
+    /* ========== ГЛОБАЛЬНЫЕ СТИЛИ ========== */
     * {
       margin: 0;
       padding: 0;
@@ -13,50 +13,68 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     }
 
+    /* Базовые цвета (тёмная тема по умолчанию) */
     body {
-      background-color: #0e1621;
-      color: #fff;
+      --bg-color: #0e1621;
+      --surface-color: #17212b;
+      --border-color: #2b3b4a;
+      --text-primary: #fff;
+      --text-secondary: #8e9eae;
+      --accent-color: #2ea6ff;
+      --message-own: #2ea6ff;
+      --message-other: #17212b;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
       height: 100vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      transition: background 0.2s;
+      transition: background 0.2s, color 0.2s;
     }
 
     /* Светлая тема */
     body.light-theme {
-      background-color: #f5f5f5;
-      color: #000;
-    }
-    body.light-theme .top-bar,
-    body.light-theme .bottom-nav,
-    body.light-theme .chat-header,
-    body.light-theme .input-area,
-    body.light-theme .search-box,
-    body.light-theme .settings-item {
-      background-color: #fff;
-      border-color: #e0e0e0;
-      color: #000;
-    }
-    body.light-theme .chat-item {
-      background-color: #fff;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    body.light-theme .message.other .message-bubble {
-      background-color: #e4e6eb;
-      color: #000;
-    }
-    body.light-theme .chat-last-msg,
-    body.light-theme .chat-time,
-    body.light-theme .chat-status,
-    body.light-theme .nav-item {
-      color: #5e6f7e;
-    }
-    body.light-theme .nav-item.active {
-      color: #2ea6ff;
+      --bg-color: #f5f5f5;
+      --surface-color: #ffffff;
+      --border-color: #e0e0e0;
+      --text-primary: #000000;
+      --text-secondary: #5e6f7e;
+      --accent-color: #2ea6ff;
+      --message-own: #2ea6ff;
+      --message-other: #e4e6eb;
     }
 
-    /* Контейнеры экранов */
+    /* Синяя тема */
+    body.blue-theme {
+      --bg-color: #1a2b3c;
+      --surface-color: #1e3a5f;
+      --border-color: #2c4a6e;
+      --accent-color: #64b5f6;
+      --message-own: #64b5f6;
+      --message-other: #1e3a5f;
+    }
+
+    /* Зелёная тема */
+    body.green-theme {
+      --bg-color: #1a2e1a;
+      --surface-color: #1f4a2c;
+      --border-color: #2a5e3a;
+      --accent-color: #81c784;
+      --message-own: #81c784;
+      --message-other: #1f4a2c;
+    }
+
+    /* Фиолетовая тема */
+    body.purple-theme {
+      --bg-color: #1e1a2e;
+      --surface-color: #312a4a;
+      --border-color: #453c63;
+      --accent-color: #b39ddb;
+      --message-own: #b39ddb;
+      --message-other: #312a4a;
+    }
+
+    /* ========== ОСНОВНЫЕ КОМПОНЕНТЫ ========== */
     .screen {
       display: none;
       height: 100%;
@@ -66,78 +84,67 @@
       display: flex;
     }
 
-    /* ========== ОСНОВНОЙ ИНТЕРФЕЙС (только чат и настройки) ========== */
-    #main-screen {
-      background: #0e1621;
-      height: 100%;
-    }
-
-    /* Верхняя панель */
     .top-bar {
-      background: #17212b;
+      background: var(--surface-color);
       padding: 12px 16px;
       display: flex;
       align-items: center;
-      border-bottom: 1px solid #2b3b4a;
+      border-bottom: 1px solid var(--border-color);
     }
     .top-bar h1 {
       flex: 1;
       font-size: 20px;
       font-weight: 600;
     }
-    .top-bar .edit-btn {
-      color: #2ea6ff;
+    .top-bar .edit-btn, .top-bar .create-btn, .top-bar .back-btn {
       background: none;
       border: none;
+      color: var(--accent-color);
       font-size: 16px;
       margin-right: 16px;
       cursor: pointer;
     }
-    .top-bar .create-btn {
-      background: none;
-      border: none;
+    .top-bar .back-btn {
       font-size: 24px;
-      color: #2ea6ff;
-      cursor: pointer;
+      margin-right: 12px;
+    }
+    .top-bar .create-btn {
+      font-size: 24px;
     }
 
-    /* Поиск */
     .search-box {
       padding: 8px 16px;
-      background: #17212b;
+      background: var(--surface-color);
     }
     .search-box input {
       width: 100%;
       padding: 12px 18px;
-      background: #242f3d;
+      background: var(--border-color);
       border: none;
       border-radius: 24px;
-      color: #fff;
+      color: var(--text-primary);
       outline: none;
     }
-    body.light-theme .search-box input {
-      background: #f0f2f5;
-      color: #000;
+    .search-box input::placeholder {
+      color: var(--text-secondary);
     }
 
-    /* Нижняя навигация */
     .bottom-nav {
       display: flex;
-      background: #17212b;
-      border-top: 1px solid #2b3b4a;
+      background: var(--surface-color);
+      border-top: 1px solid var(--border-color);
       padding: 8px 0;
     }
     .nav-item {
       flex: 1;
       text-align: center;
-      color: #8e9eae;
+      color: var(--text-secondary);
       font-size: 12px;
       padding: 8px;
       cursor: pointer;
-      transition: color 0.2s;
     }
     .nav-item.active {
-      color: #2ea6ff;
+      color: var(--accent-color);
     }
     .nav-item i {
       display: block;
@@ -155,19 +162,46 @@
       display: flex;
       align-items: center;
       padding: 12px 16px;
-      background: #0e1621;
-      border-bottom: 1px solid #17212b;
+      background: var(--bg-color);
+      border-bottom: 1px solid var(--border-color);
       cursor: pointer;
       transition: background 0.2s;
+      position: relative;
     }
     .chat-item:hover {
-      background: #1a2633;
+      background: var(--surface-color);
+    }
+    .chat-item.edit-mode {
+      padding-left: 56px;
+    }
+    .chat-checkbox {
+      position: absolute;
+      left: 16px;
+      width: 24px;
+      height: 24px;
+      background: var(--surface-color);
+      border: 2px solid var(--border-color);
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .chat-item.edit-mode .chat-checkbox {
+      display: flex;
+    }
+    .chat-checkbox.selected {
+      background: var(--accent-color);
+      border-color: var(--accent-color);
+    }
+    .chat-checkbox.selected::after {
+      content: '✓';
     }
     .chat-avatar {
       width: 54px;
       height: 54px;
       border-radius: 50%;
-      background: #2ea6ff;
+      background: var(--accent-color);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -185,7 +219,7 @@
       margin-bottom: 4px;
     }
     .chat-last-msg {
-      color: #8e9eae;
+      color: var(--text-secondary);
       font-size: 14px;
       white-space: nowrap;
       overflow: hidden;
@@ -194,13 +228,17 @@
     .chat-meta {
       text-align: right;
       font-size: 12px;
-      color: #8e9eae;
+      color: var(--text-secondary);
     }
     .chat-time {
       margin-bottom: 4px;
     }
-    .chat-status {
-      color: #2ea6ff;
+    .chat-unread {
+      background: var(--accent-color);
+      color: #fff;
+      border-radius: 12px;
+      padding: 2px 6px;
+      font-size: 10px;
     }
 
     /* Окно чата */
@@ -208,19 +246,19 @@
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #0e1621;
+      background: var(--bg-color);
     }
     .chat-header {
-      background: #17212b;
+      background: var(--surface-color);
       padding: 12px 16px;
       display: flex;
       align-items: center;
-      border-bottom: 1px solid #2b3b4a;
+      border-bottom: 1px solid var(--border-color);
     }
     .back-btn {
       background: none;
       border: none;
-      color: #2ea6ff;
+      color: var(--accent-color);
       font-size: 24px;
       margin-right: 12px;
       cursor: pointer;
@@ -233,7 +271,7 @@
     }
     .chat-header-status {
       font-size: 12px;
-      color: #8e9eae;
+      color: var(--text-secondary);
     }
     .messages-area {
       flex: 1;
@@ -252,24 +290,24 @@
       align-self: flex-end;
     }
     .message-bubble {
-      background: #17212b;
+      background: var(--message-other);
       border-radius: 18px;
       padding: 8px 12px;
-      color: #fff;
+      color: var(--text-primary);
       word-wrap: break-word;
       position: relative;
     }
     .message.own .message-bubble {
-      background: #2ea6ff;
+      background: var(--message-own);
     }
     .message-time {
       font-size: 10px;
-      color: #8e9eae;
+      color: var(--text-secondary);
       margin-top: 2px;
       align-self: flex-end;
     }
     .message.own .message-time {
-      color: #b3d9ff;
+      color: var(--accent-color);
     }
     .message.own .message-bubble::after {
       content: '';
@@ -279,7 +317,7 @@
       width: 0;
       height: 0;
       border: 8px solid transparent;
-      border-top-color: #2ea6ff;
+      border-top-color: var(--message-own);
       border-bottom: 0;
       border-right: 0;
     }
@@ -291,12 +329,10 @@
       width: 0;
       height: 0;
       border: 8px solid transparent;
-      border-top-color: #17212b;
+      border-top-color: var(--message-other);
       border-bottom: 0;
       border-left: 0;
     }
-
-    /* Файловые сообщения */
     .file-message {
       display: flex;
       align-items: center;
@@ -305,30 +341,26 @@
     .file-icon {
       font-size: 24px;
     }
-    .file-name {
-      font-size: 14px;
-      word-break: break-word;
-    }
 
     /* Поле ввода */
     .input-area {
-      background: #17212b;
+      background: var(--surface-color);
       padding: 12px 16px;
       display: flex;
       align-items: center;
-      border-top: 1px solid #2b3b4a;
+      border-top: 1px solid var(--border-color);
     }
     .attach-btn {
       background: none;
       border: none;
       font-size: 24px;
-      color: #8e9eae;
+      color: var(--text-secondary);
       margin-right: 12px;
       cursor: pointer;
     }
     .input-wrapper {
       flex: 1;
-      background: #242f3d;
+      background: var(--border-color);
       border-radius: 24px;
       padding: 8px 16px;
       display: flex;
@@ -338,32 +370,48 @@
       flex: 1;
       background: transparent;
       border: none;
-      color: #fff;
+      color: var(--text-primary);
       outline: none;
       font-size: 16px;
     }
     .input-wrapper input::placeholder {
-      color: #5e6f7e;
+      color: var(--text-secondary);
     }
     .emoji-btn, .voice-btn {
       background: none;
       border: none;
       font-size: 22px;
-      color: #8e9eae;
+      color: var(--text-secondary);
       margin-left: 8px;
       cursor: pointer;
     }
     .voice-btn.send-btn {
-      color: #2ea6ff;
+      color: var(--accent-color);
     }
-
-    /* Скрытый input для файлов */
     #file-input {
       display: none;
     }
+    .emoji-picker {
+      position: absolute;
+      bottom: 80px;
+      right: 16px;
+      background: var(--surface-color);
+      border-radius: 24px;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 8px;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .emoji-item {
+      font-size: 24px;
+      cursor: pointer;
+      text-align: center;
+    }
 
     /* Экран настроек */
-    .settings-list {
+    .settings-list, .settings-subpage {
       flex: 1;
       overflow-y: auto;
       padding: 16px;
@@ -372,7 +420,7 @@
       display: flex;
       align-items: center;
       padding: 16px;
-      background: #17212b;
+      background: var(--surface-color);
       border-radius: 12px;
       margin-bottom: 8px;
       cursor: pointer;
@@ -389,168 +437,257 @@
     }
     .settings-subtitle {
       font-size: 12px;
-      color: #8e9eae;
+      color: var(--text-secondary);
     }
     .settings-value {
-      color: #2ea6ff;
+      color: var(--accent-color);
     }
-
-    /* Переключатель темы */
-    .theme-switch {
+    .theme-option, .lang-option {
       display: flex;
-      gap: 12px;
-      margin-top: 8px;
-    }
-    .theme-option {
-      padding: 8px 16px;
-      background: #242f3d;
-      border-radius: 20px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--surface-color);
+      border-radius: 12px;
+      margin-bottom: 8px;
       cursor: pointer;
     }
-    .theme-option.active {
-      background: #2ea6ff;
+    .theme-option.active, .lang-option.active {
+      border: 2px solid var(--accent-color);
+    }
+    .privacy-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background: var(--surface-color);
+      border-radius: 12px;
+      margin-bottom: 8px;
+    }
+    .privacy-switch {
+      width: 40px;
+      height: 20px;
+      background: var(--border-color);
+      border-radius: 20px;
+      position: relative;
+      cursor: pointer;
+    }
+    .privacy-switch.on {
+      background: var(--accent-color);
+    }
+    .privacy-switch::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      top: 1px;
+      left: 1px;
+      transition: left 0.2s;
+    }
+    .privacy-switch.on::after {
+      left: 21px;
     }
 
-    /* Эмодзи-пикер (упрощённый) */
-    .emoji-picker {
-      position: absolute;
-      bottom: 80px;
-      right: 16px;
-      background: #17212b;
-      border-radius: 24px;
-      padding: 12px;
-      display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 8px;
-      z-index: 1000;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    /* Режим редактирования */
+    .edit-bar {
+      background: var(--surface-color);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
     }
-    .emoji-item {
-      font-size: 24px;
+    .edit-counter {
+      flex: 1;
+      font-weight: 600;
+    }
+    .edit-actions button {
+      background: none;
+      border: none;
+      color: var(--accent-color);
+      font-size: 16px;
+      margin-left: 16px;
       cursor: pointer;
-      text-align: center;
     }
   </style>
 </head>
 <body class="dark-theme">
-  <!-- ОСНОВНОЙ ЭКРАН (всегда активен) -->
   <div id="main-screen" class="screen active">
-    <!-- Верхняя панель (меняется в зависимости от раздела) -->
+    <!-- Верхняя панель (динамическая) -->
     <div class="top-bar" id="top-bar">
       <h1 id="screen-title">Чаты</h1>
-      <button class="edit-btn" id="edit-btn" style="display: none;">Изм.</button>
-      <button class="create-btn" id="create-btn" style="display: none;">📝</button>
+      <button class="edit-btn" id="edit-btn" onclick="toggleEditMode()">Изм.</button>
+      <button class="create-btn" id="create-btn" onclick="createGroup()">📝</button>
     </div>
 
-    <!-- Поиск (только для чатов) -->
+    <!-- Поиск -->
     <div class="search-box" id="search-box">
-      <input type="text" id="search-input" placeholder="Поиск...">
+      <input type="text" id="search-input" placeholder="Поиск..." oninput="filterChats()">
     </div>
 
-    <!-- Контейнер для контента (чаты / настройки) -->
+    <!-- Панель редактирования (скрыта) -->
+    <div id="edit-bar" class="edit-bar" style="display: none;">
+      <div class="edit-counter" id="edit-counter">0 выбрано</div>
+      <div class="edit-actions">
+        <button onclick="deleteSelectedChats()">Удалить</button>
+        <button onclick="doneEditMode()">Готово</button>
+      </div>
+    </div>
+
+    <!-- Контентная область -->
     <div id="content-area" style="flex: 1; overflow-y: auto;">
       <!-- Список чатов -->
       <div id="chats-view" class="view active">
-        <div class="chats-list" id="chats-list">
-          <!-- Один чат с ботом -->
-          <div class="chat-item" data-chat-id="bot" onclick="openChat('bot')">
-            <div class="chat-avatar">🤖</div>
-            <div class="chat-info">
-              <div class="chat-name">Zhuravlev Bot</div>
-              <div class="chat-last-msg" id="bot-last-msg">Привет! Я бот-помощник</div>
-            </div>
-            <div class="chat-meta">
-              <div class="chat-time" id="bot-time">12:34</div>
-              <div class="chat-status"></div>
-            </div>
-          </div>
-        </div>
+        <div class="chats-list" id="chats-list"></div>
       </div>
 
-      <!-- Настройки -->
+      <!-- Настройки (главная страница) -->
       <div id="settings-view" class="view" style="display: none;">
-        <div class="settings-list">
-          <div class="settings-item" onclick="toggleNotifications()">
-            <div class="settings-icon">🔔</div>
-            <div class="settings-content">
-              <div class="settings-title">Уведомления</div>
-              <div class="settings-subtitle">Вкл/Выкл</div>
-            </div>
-            <div class="settings-value" id="notif-status">Вкл</div>
-          </div>
-          <div class="settings-item" onclick="togglePrivacy()">
-            <div class="settings-icon">🔒</div>
-            <div class="settings-content">
-              <div class="settings-title">Конфиденциальность</div>
-              <div class="settings-subtitle">Кто видит номер</div>
-            </div>
-            <div class="settings-value" id="privacy-status">Никто</div>
-          </div>
-          <div class="settings-item">
+        <div class="settings-list" id="settings-main">
+          <div class="settings-item" onclick="openSettingsPage('themes')">
             <div class="settings-icon">🎨</div>
             <div class="settings-content">
-              <div class="settings-title">Тема</div>
-              <div class="settings-subtitle">Светлая / Тёмная</div>
+              <div class="settings-title" data-i18n="theme">Тема</div>
+              <div class="settings-subtitle" data-i18n="themeSub">Светлая / Тёмная</div>
             </div>
-            <div class="theme-switch">
-              <div class="theme-option" onclick="setTheme('light')">☀️</div>
-              <div class="theme-option active" onclick="setTheme('dark')">🌙</div>
-            </div>
+            <div class="settings-value" id="current-theme">Тёмная</div>
           </div>
-          <div class="settings-item" onclick="setLanguage()">
+          <div class="settings-item" onclick="openSettingsPage('privacy')">
+            <div class="settings-icon">🔒</div>
+            <div class="settings-content">
+              <div class="settings-title" data-i18n="privacy">Конфиденциальность</div>
+              <div class="settings-subtitle" data-i18n="privacySub">Кто видит номер</div>
+            </div>
+            <div class="settings-value" id="privacy-summary">...</div>
+          </div>
+          <div class="settings-item" onclick="openSettingsPage('language')">
             <div class="settings-icon">🌐</div>
             <div class="settings-content">
-              <div class="settings-title">Язык</div>
-              <div class="settings-subtitle">Русский</div>
+              <div class="settings-title" data-i18n="language">Язык</div>
+              <div class="settings-subtitle" data-i18n="languageSub">Русский / English</div>
             </div>
-            <div class="settings-value">🇷🇺</div>
+            <div class="settings-value" id="current-lang">Русский</div>
           </div>
-          <div class="settings-item" onclick="showAbout()">
+          <div class="settings-item" onclick="openSettingsPage('about')">
             <div class="settings-icon">ℹ️</div>
             <div class="settings-content">
-              <div class="settings-title">О приложении</div>
-              <div class="settings-subtitle">Версия 1.0</div>
+              <div class="settings-title" data-i18n="about">О приложении</div>
+              <div class="settings-subtitle" data-i18n="aboutSub">Версия 1.0</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Подстраницы настроек (изначально скрыты) -->
+        <div id="settings-themes" class="settings-subpage" style="display: none;">
+          <div class="top-bar">
+            <button class="back-btn" onclick="closeSettingsPage()">←</button>
+            <h1>Тема</h1>
+          </div>
+          <div class="settings-list">
+            <div class="theme-option" onclick="selectTheme('dark')">
+              <span>Тёмная</span>
+              <span class="check">✓</span>
+            </div>
+            <div class="theme-option" onclick="selectTheme('light')">
+              <span>Светлая</span>
+              <span class="check"></span>
+            </div>
+            <div class="theme-option" onclick="selectTheme('blue')">
+              <span>Синяя</span>
+              <span class="check"></span>
+            </div>
+            <div class="theme-option" onclick="selectTheme('green')">
+              <span>Зелёная</span>
+              <span class="check"></span>
+            </div>
+            <div class="theme-option" onclick="selectTheme('purple')">
+              <span>Фиолетовая</span>
+              <span class="check"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="settings-privacy" class="settings-subpage" style="display: none;">
+          <div class="top-bar">
+            <button class="back-btn" onclick="closeSettingsPage()">←</button>
+            <h1>Конфиденциальность</h1>
+          </div>
+          <div class="settings-list">
+            <div class="privacy-item">
+              <span>Номер телефона</span>
+              <div class="privacy-switch" onclick="togglePrivacy('phone')" id="privacy-phone"></div>
+            </div>
+            <div class="privacy-item">
+              <span>Последний вход</span>
+              <div class="privacy-switch" onclick="togglePrivacy('lastSeen')" id="privacy-lastSeen"></div>
+            </div>
+            <div class="privacy-item">
+              <span>Фото профиля</span>
+              <div class="privacy-switch" onclick="togglePrivacy('photo')" id="privacy-photo"></div>
+            </div>
+            <div class="privacy-item">
+              <span>Статус</span>
+              <div class="privacy-switch" onclick="togglePrivacy('status')" id="privacy-status"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="settings-language" class="settings-subpage" style="display: none;">
+          <div class="top-bar">
+            <button class="back-btn" onclick="closeSettingsPage()">←</button>
+            <h1>Язык</h1>
+          </div>
+          <div class="settings-list">
+            <div class="lang-option" onclick="selectLanguage('ru')">
+              <span>Русский</span>
+              <span class="check">✓</span>
+            </div>
+            <div class="lang-option" onclick="selectLanguage('en')">
+              <span>English</span>
+              <span class="check"></span>
+            </div>
+          </div>
+        </div>
+
+        <div id="settings-about" class="settings-subpage" style="display: none;">
+          <div class="top-bar">
+            <button class="back-btn" onclick="closeSettingsPage()">←</button>
+            <h1>О приложении</h1>
+          </div>
+          <div class="settings-list" style="text-align: center;">
+            <p>Zhuravlev Telegram Clone v1.0</p>
+            <p>Сделано с ❤️ для демонстрации</p>
           </div>
         </div>
       </div>
 
-      <!-- Окно чата (скрыто по умолчанию) -->
+      <!-- Окно чата -->
       <div id="chat-window" class="chat-window" style="display: none;">
         <div class="chat-header">
           <button class="back-btn" onclick="closeChat()">←</button>
           <div class="chat-header-info">
-            <div class="chat-header-name" id="chat-header-name">Zhuravlev Bot</div>
+            <div class="chat-header-name" id="chat-header-name"></div>
             <div class="chat-header-status" id="chat-header-status">онлайн</div>
           </div>
-          <button class="edit-btn" style="margin-right: 0;" onclick="showBotMenu()">⋮</button>
+          <button class="edit-btn" style="margin-right: 0;" onclick="showChatMenu()">⋮</button>
         </div>
-        <div class="messages-area" id="messages-area">
-          <!-- Сообщения будут добавляться сюда -->
-        </div>
-        <!-- Поле ввода -->
+        <div class="messages-area" id="messages-area"></div>
         <div class="input-area">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
           <div class="input-wrapper">
             <input type="text" id="message-input" placeholder="Сообщение" oninput="handleTyping()">
             <button class="emoji-btn" onclick="toggleEmojiPicker()">😀</button>
-            <button class="voice-btn" id="send-btn" onclick="sendMessage()">➤</button>
+            <button class="voice-btn" id="send-btn" onclick="sendMessage()">🎤</button>
           </div>
         </div>
-        <!-- Скрытый input для файлов -->
         <input type="file" id="file-input" onchange="uploadFile()" style="display: none;">
-        <!-- Эмодзи-пикер (скрыт) -->
         <div id="emoji-picker" class="emoji-picker" style="display: none;">
           <span class="emoji-item" onclick="addEmoji('😊')">😊</span>
           <span class="emoji-item" onclick="addEmoji('😂')">😂</span>
           <span class="emoji-item" onclick="addEmoji('❤️')">❤️</span>
           <span class="emoji-item" onclick="addEmoji('👍')">👍</span>
           <span class="emoji-item" onclick="addEmoji('🔥')">🔥</span>
-          <span class="emoji-item" onclick="addEmoji('🎉')">🎉</span>
-          <span class="emoji-item" onclick="addEmoji('🤔')">🤔</span>
-          <span class="emoji-item" onclick="addEmoji('👏')">👏</span>
-          <span class="emoji-item" onclick="addEmoji('🙏')">🙏</span>
-          <span class="emoji-item" onclick="addEmoji('💯')">💯</span>
         </div>
       </div>
     </div>
@@ -558,81 +695,200 @@
     <!-- Нижняя навигация -->
     <div class="bottom-nav">
       <div class="nav-item active" data-view="chats" onclick="switchView('chats')">
-        <i>💬</i><span>Чаты</span>
+        <i>💬</i><span data-i18n="chats">Чаты</span>
       </div>
       <div class="nav-item" data-view="settings" onclick="switchView('settings')">
-        <i>⚙️</i><span>Настройки</span>
+        <i>⚙️</i><span data-i18n="settings">Настройки</span>
       </div>
     </div>
   </div>
 
   <script>
-    // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
-    let currentView = 'chats';
-    let currentChat = null; // 'bot' или null
-    let messages = [];
-    let botMessages = [
-      { id: '1', sender: 'bot', content: 'Привет! Я Zhuravlev Bot 🤖', time: new Date() },
-      { id: '2', sender: 'bot', content: 'Я могу отвечать на сообщения, отправлять эмодзи и файлы!', time: new Date() },
-      { id: '3', sender: 'bot', content: 'Попробуй написать мне что-нибудь или прикрепить файл.', time: new Date() }
+    // ==================== ДАННЫЕ ====================
+    let chats = [
+      { id: 'bot', name: 'Zhuravlev Bot', avatar: '🤖', lastMessage: 'Привет! Я бот', lastTime: new Date(Date.now() - 3600000), unread: 0, isGroup: false },
+      { id: 'friends', name: 'Друзья', avatar: '👥', lastMessage: 'Антон: Привет!', lastTime: new Date(Date.now() - 7200000), unread: 2, isGroup: true, members: ['Антон', 'Мария', 'Иван'] },
+      { id: 'work', name: 'Работа', avatar: '💼', lastMessage: 'Собрание в 15:00', lastTime: new Date(Date.now() - 10800000), unread: 0, isGroup: true, members: ['Пётр', 'Елена'] }
     ];
-    let notifications = true;
-    let privacy = 'Никто';
-    let theme = 'dark';
+    let messages = {}; // { chatId: [message, ...] }
+    messages['bot'] = [
+      { id: 'b1', sender: 'bot', content: 'Привет! Я Zhuravlev Bot 🤖', time: new Date(Date.now() - 86400000) },
+      { id: 'b2', sender: 'bot', content: 'Я могу отвечать на сообщения, отправлять эмодзи и файлы!', time: new Date(Date.now() - 86000000) },
+    ];
+    messages['friends'] = [
+      { id: 'f1', sender: 'Антон', content: 'Привет!', time: new Date(Date.now() - 7200000) },
+      { id: 'f2', sender: 'Мария', content: 'Как дела?', time: new Date(Date.now() - 7100000) },
+    ];
+    messages['work'] = [
+      { id: 'w1', sender: 'Пётр', content: 'Собрание в 15:00', time: new Date(Date.now() - 10800000) },
+    ];
+
+    let currentChat = null;
+    let editMode = false;
+    let selectedChats = new Set();
+    let currentTheme = 'dark';
+    let currentLang = 'ru';
+    let privacySettings = {
+      phone: 'nobody',
+      lastSeen: 'everyone',
+      photo: 'everyone',
+      status: 'everyone'
+    };
+
+    const translations = {
+      ru: {
+        chats: 'Чаты',
+        settings: 'Настройки',
+        theme: 'Тема',
+        themeSub: 'Светлая / Тёмная',
+        privacy: 'Конфиденциальность',
+        privacySub: 'Кто видит номер',
+        language: 'Язык',
+        languageSub: 'Русский / English',
+        about: 'О приложении',
+        aboutSub: 'Версия 1.0',
+        edit: 'Изм.',
+        done: 'Готово',
+        delete: 'Удалить',
+        search: 'Поиск...',
+        online: 'онлайн',
+        bot: 'Zhuravlev Bot'
+      },
+      en: {
+        chats: 'Chats',
+        settings: 'Settings',
+        theme: 'Theme',
+        themeSub: 'Light / Dark',
+        privacy: 'Privacy',
+        privacySub: 'Who can see number',
+        language: 'Language',
+        languageSub: 'Russian / English',
+        about: 'About',
+        aboutSub: 'Version 1.0',
+        edit: 'Edit',
+        done: 'Done',
+        delete: 'Delete',
+        search: 'Search...',
+        online: 'online',
+        bot: 'Zhuravlev Bot'
+      }
+    };
 
     // ==================== ИНИЦИАЛИЗАЦИЯ ====================
     document.addEventListener('DOMContentLoaded', () => {
-      // Загружаем сохранённую тему
-      const savedTheme = localStorage.getItem('theme');
-      if (savedTheme) setTheme(savedTheme, false);
-
-      // Загружаем сообщения (для демо)
-      messages = [...botMessages];
-      renderMessages();
-
-      // Обновляем последнее сообщение в списке чатов
-      updateLastMessage();
+      renderChats();
+      applyTranslations();
     });
 
     // ==================== ПЕРЕКЛЮЧЕНИЕ РАЗДЕЛОВ ====================
     function switchView(view) {
-      currentView = view;
       document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
       document.querySelector(`[data-view="${view}"]`).classList.add('active');
-
       document.getElementById('chats-view').style.display = view === 'chats' ? 'block' : 'none';
       document.getElementById('settings-view').style.display = view === 'settings' ? 'block' : 'none';
-
-      const title = document.getElementById('screen-title');
-      const editBtn = document.getElementById('edit-btn');
-      const createBtn = document.getElementById('create-btn');
-      const searchBox = document.getElementById('search-box');
-
       if (view === 'chats') {
-        title.textContent = 'Чаты';
-        editBtn.style.display = 'inline-block';
-        createBtn.style.display = 'inline-block';
-        searchBox.style.display = 'block';
-      } else if (view === 'settings') {
-        title.textContent = 'Настройки';
-        editBtn.style.display = 'none';
-        createBtn.style.display = 'none';
-        searchBox.style.display = 'none';
+        document.getElementById('screen-title').textContent = translations[currentLang].chats;
+        document.getElementById('edit-btn').style.display = 'inline-block';
+        document.getElementById('create-btn').style.display = 'inline-block';
+        document.getElementById('search-box').style.display = 'block';
+        closeSettingsPage(); // закрыть подстраницы
+        renderChats();
+      } else {
+        document.getElementById('screen-title').textContent = translations[currentLang].settings;
+        document.getElementById('edit-btn').style.display = 'none';
+        document.getElementById('create-btn').style.display = 'none';
+        document.getElementById('search-box').style.display = 'none';
       }
     }
 
-    // ==================== ЧАТ С БОТОМ ====================
+    // ==================== ЧАТЫ ====================
+    function renderChats() {
+      const list = document.getElementById('chats-list');
+      list.innerHTML = '';
+      const filter = document.getElementById('search-input').value.toLowerCase();
+      const filtered = chats.filter(c => c.name.toLowerCase().includes(filter));
+      filtered.forEach(chat => {
+        const item = document.createElement('div');
+        item.className = `chat-item ${editMode ? 'edit-mode' : ''}`;
+        item.dataset.id = chat.id;
+        item.onclick = (e) => {
+          if (editMode) {
+            toggleSelectChat(chat.id, e);
+          } else {
+            openChat(chat.id);
+          }
+        };
+        const checkbox = document.createElement('div');
+        checkbox.className = `chat-checkbox ${selectedChats.has(chat.id) ? 'selected' : ''}`;
+        item.appendChild(checkbox);
+        item.innerHTML += `
+          <div class="chat-avatar">${chat.avatar}</div>
+          <div class="chat-info">
+            <div class="chat-name">${chat.name}</div>
+            <div class="chat-last-msg">${chat.lastMessage}</div>
+          </div>
+          <div class="chat-meta">
+            <div class="chat-time">${formatTime(chat.lastTime)}</div>
+            ${chat.unread ? `<div class="chat-unread">${chat.unread}</div>` : ''}
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    function formatTime(date) {
+      return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function filterChats() {
+      renderChats();
+    }
+
+    // ==================== РЕЖИМ РЕДАКТИРОВАНИЯ ====================
+    function toggleEditMode() {
+      editMode = !editMode;
+      document.getElementById('edit-bar').style.display = editMode ? 'flex' : 'none';
+      document.getElementById('edit-btn').textContent = editMode ? translations[currentLang].done : translations[currentLang].edit;
+      if (!editMode) {
+        selectedChats.clear();
+      }
+      renderChats();
+    }
+
+    function doneEditMode() {
+      toggleEditMode();
+    }
+
+    function toggleSelectChat(chatId, event) {
+      event.stopPropagation();
+      if (selectedChats.has(chatId)) {
+        selectedChats.delete(chatId);
+      } else {
+        selectedChats.add(chatId);
+      }
+      document.getElementById('edit-counter').textContent = `${selectedChats.size} выбрано`;
+      renderChats(); // обновить чекбоксы
+    }
+
+    function deleteSelectedChats() {
+      chats = chats.filter(c => !selectedChats.has(c.id));
+      selectedChats.clear();
+      toggleEditMode(); // выйти из режима
+    }
+
+    // ==================== ЧАТ С БОТОМ/ГРУППОЙ ====================
     function openChat(chatId) {
       currentChat = chatId;
+      const chat = chats.find(c => c.id === chatId);
+      document.getElementById('chat-header-name').textContent = chat.name;
+      document.getElementById('chat-header-status').textContent = translations[currentLang].online;
       document.getElementById('chats-view').style.display = 'none';
       document.getElementById('settings-view').style.display = 'none';
       document.getElementById('chat-window').style.display = 'flex';
       document.getElementById('top-bar').style.display = 'none';
       document.getElementById('search-box').style.display = 'none';
-
-      // Загружаем сообщения (уже есть)
-      renderMessages();
-      scrollToBottom();
+      document.getElementById('edit-bar').style.display = 'none';
+      renderMessages(chatId);
     }
 
     function closeChat() {
@@ -641,94 +897,87 @@
       document.getElementById('chats-view').style.display = 'block';
       document.getElementById('top-bar').style.display = 'flex';
       document.getElementById('search-box').style.display = 'block';
+      if (editMode) {
+        document.getElementById('edit-bar').style.display = 'flex';
+      }
     }
 
-    function renderMessages() {
+    function renderMessages(chatId) {
       const area = document.getElementById('messages-area');
       area.innerHTML = '';
-      messages.forEach(msg => {
+      const msgs = messages[chatId] || [];
+      msgs.forEach(msg => {
         const isOwn = msg.sender === 'me';
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${isOwn ? 'own' : 'other'}`;
-        msgDiv.dataset.id = msg.id;
-
-        let contentHtml = '';
-        if (msg.type === 'file') {
-          contentHtml = `
-            <div class="file-message">
-              <span class="file-icon">📎</span>
-              <span class="file-name">${msg.fileName || 'Файл'}</span>
-            </div>
-          `;
-        } else {
-          contentHtml = `<div class="message-content">${escapeHtml(msg.content)}</div>`;
-        }
-
-        const time = new Date(msg.time).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-
+        let contentHtml = msg.type === 'file' ?
+          `<div class="file-message"><span class="file-icon">📎</span><span>${msg.fileName}</span></div>` :
+          `<div>${escapeHtml(msg.content)}</div>`;
         msgDiv.innerHTML = `
-          <div class="message-bubble ${isOwn ? 'own-bubble' : 'other-bubble'}">
-            ${contentHtml}
-            <div class="message-time">${time}</div>
-          </div>
+          <div class="message-bubble">${contentHtml}</div>
+          <div class="message-time">${formatTime(msg.time)}</div>
         `;
         area.appendChild(msgDiv);
       });
+      scrollToBottom();
     }
 
     function sendMessage() {
       const input = document.getElementById('message-input');
       const content = input.value.trim();
-      if (!content) return;
-
-      // Добавляем своё сообщение
+      if (!content || !currentChat) return;
       const newMsg = {
         id: Date.now().toString(),
         sender: 'me',
-        content: content,
+        content,
         time: new Date(),
         type: 'text'
       };
-      messages.push(newMsg);
-      renderMessages();
+      if (!messages[currentChat]) messages[currentChat] = [];
+      messages[currentChat].push(newMsg);
+      renderMessages(currentChat);
       input.value = '';
       document.getElementById('send-btn').className = 'voice-btn';
       document.getElementById('send-btn').textContent = '🎤';
 
-      // Ответ бота (имитация)
+      // Ответ от бота или участника группы (имитация)
       setTimeout(() => {
-        const botReply = {
+        const chat = chats.find(c => c.id === currentChat);
+        let replySender = 'bot';
+        let replyContent = generateBotReply(content);
+        if (chat.isGroup) {
+          const members = chat.members || [];
+          replySender = members[Math.floor(Math.random() * members.length)];
+          replyContent = `Принял: "${content}" — ${replySender}`;
+        }
+        const reply = {
           id: (Date.now() + 1).toString(),
-          sender: 'bot',
-          content: generateBotReply(content),
+          sender: replySender,
+          content: replyContent,
           time: new Date(),
           type: 'text'
         };
-        messages.push(botReply);
-        renderMessages();
-        scrollToBottom();
-        updateLastMessage(botReply.content);
+        messages[currentChat].push(reply);
+        renderMessages(currentChat);
+        // обновить последнее сообщение в списке
+        const chatObj = chats.find(c => c.id === currentChat);
+        if (chatObj) {
+          chatObj.lastMessage = replyContent.length > 30 ? replyContent.slice(0,30)+'…' : replyContent;
+          chatObj.lastTime = new Date();
+        }
       }, 1000);
-
-      scrollToBottom();
-      updateLastMessage(content);
     }
 
-    function generateBotReply(userMsg) {
-      const lower = userMsg.toLowerCase();
-      if (lower.includes('привет')) return 'И тебе привет! 👋';
-      if (lower.includes('как дела')) return 'У меня всё отлично, спасибо! А у тебя?';
-      if (lower.includes('бот')) return 'Да, я бот 🤖';
-      if (lower.includes('круто')) return 'Спасибо! 😊';
-      if (lower.includes('пока')) return 'До встречи! 👋';
-      return 'Интересно... Расскажи подробнее!';
+    function generateBotReply(text) {
+      if (text.includes('привет')) return 'И тебе привет!';
+      if (text.includes('как дела')) return 'Отлично!';
+      if (text.includes('бот')) return 'Я просто бот';
+      return 'Интересно...';
     }
 
     function uploadFile() {
-      const fileInput = document.getElementById('file-input');
-      const file = fileInput.files[0];
-      if (!file) return;
-
+      const file = document.getElementById('file-input').files[0];
+      if (!file || !currentChat) return;
       const newMsg = {
         id: Date.now().toString(),
         sender: 'me',
@@ -737,36 +986,30 @@
         time: new Date(),
         type: 'file'
       };
-      messages.push(newMsg);
-      renderMessages();
-      scrollToBottom();
-
-      // Ответ бота на файл
+      messages[currentChat].push(newMsg);
+      renderMessages(currentChat);
       setTimeout(() => {
-        const botReply = {
+        const reply = {
           id: (Date.now() + 1).toString(),
           sender: 'bot',
-          content: `Получил файл: ${file.name} 📂`,
+          content: `Файл "${file.name}" получен!`,
           time: new Date(),
           type: 'text'
         };
-        messages.push(botReply);
-        renderMessages();
-        scrollToBottom();
+        messages[currentChat].push(reply);
+        renderMessages(currentChat);
       }, 1000);
-
-      fileInput.value = ''; // сброс
     }
 
     function handleTyping() {
       const input = document.getElementById('message-input');
-      const sendBtn = document.getElementById('send-btn');
-      if (input.value.trim().length > 0) {
-        sendBtn.className = 'voice-btn send-btn';
-        sendBtn.textContent = '➤';
+      const btn = document.getElementById('send-btn');
+      if (input.value.trim()) {
+        btn.className = 'voice-btn send-btn';
+        btn.textContent = '➤';
       } else {
-        sendBtn.className = 'voice-btn';
-        sendBtn.textContent = '🎤';
+        btn.className = 'voice-btn';
+        btn.textContent = '🎤';
       }
     }
 
@@ -776,11 +1019,14 @@
     }
 
     function addEmoji(emoji) {
-      const input = document.getElementById('message-input');
-      input.value += emoji;
-      input.focus();
-      toggleEmojiPicker();
+      document.getElementById('message-input').value += emoji;
+      document.getElementById('message-input').focus();
       handleTyping();
+    }
+
+    function scrollToBottom() {
+      const area = document.getElementById('messages-area');
+      area.scrollTop = area.scrollHeight;
     }
 
     function escapeHtml(text) {
@@ -789,61 +1035,91 @@
       return div.innerHTML;
     }
 
-    function scrollToBottom() {
-      const area = document.getElementById('messages-area');
-      area.scrollTop = area.scrollHeight;
+    function showChatMenu() {
+      alert('Меню чата (заглушка)');
     }
 
-    function updateLastMessage(text) {
-      const lastMsgEl = document.getElementById('bot-last-msg');
-      const timeEl = document.getElementById('bot-time');
-      if (text) {
-        lastMsgEl.textContent = text.length > 30 ? text.slice(0, 30) + '…' : text;
-        const now = new Date();
-        timeEl.textContent = now.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
-      }
+    // ==================== СОЗДАНИЕ ГРУППЫ ====================
+    function createGroup() {
+      const name = prompt('Введите название группы:');
+      if (!name) return;
+      const newGroup = {
+        id: 'group' + Date.now(),
+        name,
+        avatar: '👥',
+        lastMessage: 'Группа создана',
+        lastTime: new Date(),
+        unread: 0,
+        isGroup: true,
+        members: ['Вы']
+      };
+      chats.push(newGroup);
+      messages[newGroup.id] = [{ id: 'g1', sender: 'system', content: 'Группа создана', time: new Date() }];
+      renderChats();
     }
 
     // ==================== НАСТРОЙКИ ====================
-    function toggleNotifications() {
-      notifications = !notifications;
-      document.getElementById('notif-status').textContent = notifications ? 'Вкл' : 'Выкл';
-    }
-
-    function togglePrivacy() {
-      const options = ['Никто', 'Мои контакты', 'Все'];
-      let idx = options.indexOf(privacy);
-      idx = (idx + 1) % options.length;
-      privacy = options[idx];
-      document.getElementById('privacy-status').textContent = privacy;
-    }
-
-    function setTheme(newTheme, save = true) {
-      theme = newTheme;
-      document.body.classList.toggle('light-theme', newTheme === 'light');
-      document.querySelectorAll('.theme-option').forEach(opt => opt.classList.remove('active'));
-      if (newTheme === 'light') {
-        document.querySelector('.theme-option[onclick="setTheme(\'light\')"]').classList.add('active');
-      } else {
-        document.querySelector('.theme-option[onclick="setTheme(\'dark\')"]').classList.add('active');
+    function openSettingsPage(page) {
+      document.getElementById('settings-main').style.display = 'none';
+      document.getElementById('settings-' + page).style.display = 'block';
+      document.getElementById('top-bar').style.display = 'none';
+      // обновить активную тему
+      if (page === 'themes') {
+        document.querySelectorAll('.theme-option').forEach(opt => opt.classList.remove('active'));
+        document.querySelector(`.theme-option[onclick*="${currentTheme}"]`).classList.add('active');
       }
-      if (save) localStorage.setItem('theme', newTheme);
+      if (page === 'language') {
+        document.querySelectorAll('.lang-option').forEach(opt => opt.classList.remove('active'));
+        document.querySelector(`.lang-option[onclick*="${currentLang}"]`).classList.add('active');
+      }
+      if (page === 'privacy') {
+        updatePrivacySwitches();
+      }
     }
 
-    function setLanguage() {
-      alert('Смена языка (заглушка)');
+    function closeSettingsPage() {
+      document.getElementById('settings-main').style.display = 'block';
+      document.getElementById('settings-themes').style.display = 'none';
+      document.getElementById('settings-privacy').style.display = 'none';
+      document.getElementById('settings-language').style.display = 'none';
+      document.getElementById('settings-about').style.display = 'none';
+      document.getElementById('top-bar').style.display = 'flex';
     }
 
-    function showAbout() {
-      alert('Zhuravlev Telegram Clone v1.0\nСделано с ❤️ для теста');
+    function selectTheme(theme) {
+      currentTheme = theme;
+      document.body.className = theme + '-theme';
+      document.getElementById('current-theme').textContent = theme === 'dark' ? 'Тёмная' : theme === 'light' ? 'Светлая' : theme === 'blue' ? 'Синяя' : theme === 'green' ? 'Зелёная' : 'Фиолетовая';
+      closeSettingsPage();
     }
 
-    function showBotMenu() {
-      alert('Меню бота (заглушка)');
+    function selectLanguage(lang) {
+      currentLang = lang;
+      document.getElementById('current-lang').textContent = lang === 'ru' ? 'Русский' : 'English';
+      applyTranslations();
+      closeSettingsPage();
     }
 
-    // Для поиска (заглушка)
-    function filterChats() {}
+    function applyTranslations() {
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (translations[currentLang][key]) {
+          el.textContent = translations[currentLang][key];
+        }
+      });
+      document.getElementById('edit-btn').textContent = translations[currentLang].edit;
+      document.getElementById('search-input').placeholder = translations[currentLang].search;
+    }
+
+    function togglePrivacy(item) {
+      // Простой переключатель: показываем вкл/выкл
+      const sw = document.getElementById(`privacy-${item}`);
+      sw.classList.toggle('on');
+    }
+
+    function updatePrivacySwitches() {
+      // Здесь можно установить состояние из privacySettings
+    }
   </script>
 </body>
 </html>
