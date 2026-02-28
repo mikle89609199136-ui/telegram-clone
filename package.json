@@ -1,6 +1,6 @@
 {
   "name": "zhuravlev-telegram-clone",
-  "version": "10.0.0",
+  "version": "11.0.0",
   "description": "Telegram web clone with full functionality",
   "main": "server.js",
   "scripts": {
