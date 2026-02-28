@@ -23,8 +23,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Маршруты API
-app.use('/api/auth', require('./auth'));
-app.use('/api/data', require('./data'));
+app.use('/api/auth', require('./auth')); // только auth, data.js не роутер
 
 // Эндпоинт здоровья
 app.get('/health', (req, res) => {
