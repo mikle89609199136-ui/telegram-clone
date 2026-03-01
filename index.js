@@ -33,11 +33,11 @@ module.exports = (io) => {
                 time: Date.now(),
                 reactions: []
             };
-
+            // Сохраняем в JSON
             const messages = getData('messages.json');
             messages.push(message);
             saveData('messages.json', messages);
-
+            // Обновляем последнее сообщение в чате
             const chats = getData('chats.json');
             const chat = chats.find(c => c.id === chatId);
             if (chat) {
@@ -45,7 +45,6 @@ module.exports = (io) => {
                 chat.lastTime = Date.now();
                 saveData('chats.json', chats);
             }
-
             io.to(chatId).emit('newMessage', message);
         });
 
