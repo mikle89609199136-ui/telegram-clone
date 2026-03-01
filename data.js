@@ -1,10 +1,9 @@
-// Хранилище данных в памяти (при перезапуске всё сбрасывается)
-let users = [];           // массив объектов { id, username, password, name, avatar, birthday, phone }
-let chats = [];           // массив объектов { id, type, name, avatar, participants, lastMessage, lastTime, unread, pinned, description, privacy, public, link, owner, admins, permissions, banned }
-let messages = {};        // объект: { [chatId]: [ { id, senderId, content, time, type, fileName, reactions, pollQuestion, pollOptions, pollMultiple, pollQuiz } ] }
-let publicChats = [];     // копии публичных чатов для глобального поиска
+// Хранилище в памяти (при перезапуске данные теряются)
+let users = [];
+let chats = [];
+let messages = {};
+let publicChats = [];
 
-// Функции для работы с данными
 function addUser(user) {
   users.push(user);
   return user;
@@ -25,11 +24,11 @@ function getAllUsers() {
 function addChat(chat) {
   chats.push(chat);
   if (chat.public) {
-    publicChats.push({ 
-      id: chat.id, 
-      type: chat.type, 
-      name: chat.name, 
-      avatar: chat.avatar, 
+    publicChats.push({
+      id: chat.id,
+      type: chat.type,
+      name: chat.name,
+      avatar: chat.avatar,
       description: chat.description,
       participants: chat.participants,
       owner: chat.owner
@@ -50,7 +49,6 @@ function getPublicChats() {
 function addMessage(chatId, message) {
   if (!messages[chatId]) messages[chatId] = [];
   messages[chatId].push(message);
-  // Обновляем lastMessage и lastTime в чате
   const chat = chats.find(c => c.id === chatId);
   if (chat) {
     chat.lastMessage = message.content.length > 30 ? message.content.slice(0,30)+'…' : message.content;
