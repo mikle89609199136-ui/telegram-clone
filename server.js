@@ -40,7 +40,6 @@ app.post('/api/register', async (req, res) => {
   };
   data.addUser(newUser);
 
-  // Автоматически логиним после регистрации
   const token = jwt.sign({ id: username, username }, JWT_SECRET);
   res.json({ token, user: { id: username, name: newUser.name, avatar: newUser.avatar } });
 });
