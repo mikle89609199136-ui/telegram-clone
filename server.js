@@ -12,7 +12,7 @@ const io = socketIo(server, { cors: { origin: '*' } });
 
 const PORT = process.env.PORT || 3000;
 
-// Создаём папку data, если её нет
+// Создаём папку data, если нет
 const DATA_DIR = path.join(__dirname, 'data');
 fs.ensureDirSync(DATA_DIR);
 
@@ -23,11 +23,13 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Маршруты API
-app.use('/api/auth', require('./auth')); // только auth, data.js не роутер
+app.use('/api/auth', require('./auth'));
+// data.js – вспомогательный модуль, не маршрут
+// app.use('/api/data', require('./data')); // ЭТО УДАЛЕНО
 
 // Эндпоинт здоровья
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'OK', version: '11.0' });
+    res.status(200).json({ status: 'OK', version: '12.0' });
 });
 
 // Для всех остальных запросов отдаём фронтенд
