@@ -15,12 +15,9 @@ const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
-
-// ==================== API РОУТЫ ====================
 
 // Регистрация
 app.post('/api/register', async (req, res) => {
@@ -57,23 +54,22 @@ app.post('/api/login', async (req, res) => {
   res.json({ token, user: { id: username, name: user.name, avatar: user.avatar } });
 });
 
-// Получить всех пользователей (для поиска)
+// Все пользователи
 app.get('/api/users', authenticateToken, (req, res) => {
   res.json(data.getAllUsers());
 });
 
-// Получить публичные чаты (каналы/группы)
+// Публичные чаты
 app.get('/api/public-chats', authenticateToken, (req, res) => {
   res.json(data.getPublicChats());
 });
 
-// Получить чаты текущего пользователя
+// Чаты пользователя
 app.get('/api/chats', authenticateToken, (req, res) => {
-  const userChats = data.getChatsForUser(req.user.id);
-  res.json(userChats);
+  res.json(data.getChatsForUser(req.user.id));
 });
 
-// Создать новый чат (личный, группа, канал)
+// Создать чат
 app.post('/api/chats', authenticateToken, (req, res) => {
   const { type, name, avatar, participants, description, privacy, permissions, link, owner } = req.body;
   const newChat = {
@@ -99,11 +95,9 @@ app.post('/api/chats', authenticateToken, (req, res) => {
   res.json(newChat);
 });
 
-// Получить сообщения чата
+// Сообщения чата
 app.get('/api/chats/:id/messages', authenticateToken, (req, res) => {
-  const chatId = req.params.id;
-  const msgs = data.getMessages(chatId);
-  res.json(msgs);
+  res.json(data.getMessages(req.params.id));
 });
 
 // Отправить сообщение
@@ -128,7 +122,7 @@ app.post('/api/chats/:id/messages', authenticateToken, (req, res) => {
   res.json(newMsg);
 });
 
-// ==================== WEB SOCKET ====================
+// WebSocket
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error('Authentication error'));
