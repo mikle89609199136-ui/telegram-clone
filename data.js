@@ -1,4 +1,4 @@
-// Хранилище данных в памяти
+// Хранилище данных в памяти (при перезапуске всё сбрасывается)
 let users = [];           // массив объектов { id, username, password, name, avatar, birthday, phone }
 let chats = [];           // массив объектов { id, type, name, avatar, participants, lastMessage, lastTime, unread, pinned, description, privacy, public, link, owner, admins, permissions, banned }
 let messages = {};        // объект: { [chatId]: [ { id, senderId, content, time, type, fileName, reactions, pollQuestion, pollOptions, pollMultiple, pollQuiz } ] }
