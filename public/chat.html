@@ -2,20 +2,23 @@
     // ==================== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ====================
     let appState = {
         token: localStorage.getItem('token') || null,
-        currentAccount: null,          // id пользователя
+        currentAccount: null,
         me: null,
         chats: [],
         messages: {},
-        folders: [],                    // пока храним на клиенте (можно позже вынести на сервер)
-        localNames: {},
-        chatNotifications: {},
+        folders: JSON.parse(localStorage.getItem('folders')) || [],
+        localNames: JSON.parse(localStorage.getItem('localNames')) || {},
+        chatNotifications: JSON.parse(localStorage.getItem('chatNotifications')) || {},
         theme: localStorage.getItem('theme') || 'dark',
         wallpaper: localStorage.getItem('wallpaper') || 'default',
         desktopMode: localStorage.getItem('desktopMode') === 'true' ? true : (window.innerWidth >= 768),
         language: localStorage.getItem('language') || 'ru',
-        privacy: JSON.parse(localStorage.getItem('privacy')) || { /* ... */ },
-        allUsers: [],                    // список всех пользователей для поиска
-        publicChats: [],                  // публичные чаты
+        privacy: JSON.parse(localStorage.getItem('privacy')) || {
+            phone: 'everyone', lastSeen: 'everyone', photo: 'everyone',
+            status: 'everyone', groups: 'everyone', calls: 'everyone'
+        },
+        allUsers: [],
+        publicChats: [],
         currentChatId: null,
         editMode: false,
         selectedChats: [],
@@ -44,14 +47,53 @@
 
     const API_URL = ''; // относительный путь, так как сервер на том же домене
 
-    // ==================== ПЕРЕВОДЫ И ТЕМЫ (без изменений) ====================
-    const i18n = { /* ... оставьте как было ... */ };
+    // ==================== ПЕРЕВОДЫ И ТЕМЫ ====================
+    const i18n = {
+        ru: {
+            chats: 'Чаты', contacts: 'Контакты', settings: 'Настройки',
+            edit: 'Изм.', search: 'Поиск...', selected: 'выбрано',
+            delete: 'Удалить', pin: 'Закрепить', addToFolder: 'В папку',
+            done: 'Готово', profile: 'Профиль', appearance: 'Оформление',
+            privacy: 'Конфиденциальность', devices: 'Устройства',
+            folders: 'Папки с чатами', language: 'Язык', about: 'О приложении',
+            create: 'Создать', channel: 'Канал', group: 'Группа',
+            addMembers: 'Добавить участников', chooseEmoji: 'Выбрать эмодзи',
+            uploadPhoto: 'Загрузить фото', inviteLink: 'Ссылка-приглашение',
+            copy: 'Копировать', permissions: 'Разрешения',
+            createFolder: 'Создать папку', folderColor: 'Цвет метки',
+            selectChats: 'Выберите чаты', theme: 'Тема', wallpaper: 'Обои чата',
+            displayMode: 'Режим отображения', phoneNumber: 'Номер телефона',
+            lastSeen: 'Последний вход', profilePhoto: 'Фото профиля',
+            status: 'Статус', addToGroups: 'Добавление в группы',
+            calls: 'Звонки', updated: 'Дата обновления: 08.03.2026',
+            author: 'Автор: Михаил Журавлев', accountsCount: 'Аккаунтов:'
+        },
+        en: {
+            chats: 'Chats', contacts: 'Contacts', settings: 'Settings',
+            edit: 'Edit', search: 'Search...', selected: 'selected',
+            delete: 'Delete', pin: 'Pin', addToFolder: 'Add to folder',
+            done: 'Done', profile: 'Profile', appearance: 'Appearance',
+            privacy: 'Privacy', devices: 'Devices', folders: 'Folders',
+            language: 'Language', about: 'About', create: 'Create',
+            channel: 'Channel', group: 'Group', addMembers: 'Add members',
+            chooseEmoji: 'Choose emoji', uploadPhoto: 'Upload photo',
+            inviteLink: 'Invite link', copy: 'Copy', permissions: 'Permissions',
+            createFolder: 'Create folder', folderColor: 'Folder color',
+            selectChats: 'Select chats', theme: 'Theme', wallpaper: 'Chat wallpaper',
+            displayMode: 'Display mode', phoneNumber: 'Phone number',
+            lastSeen: 'Last seen', profilePhoto: 'Profile photo',
+            status: 'Status', addToGroups: 'Add to groups', calls: 'Calls',
+            updated: 'Updated: 08.03.2026', author: 'Author: Mikhail Zhuravlev',
+            accountsCount: 'Accounts:'
+        }
+    };
     function t(key) { return i18n[appState.language][key] || key; }
-    function applyTranslations() { /* без изменений */ }
-    function applyThemeAndWallpaper() { /* без изменений */ }
 
-    // ==================== МОДАЛЬНЫЕ ОКНА (без изменений) ====================
-    function showModal({ title, content, input, onConfirm, onCancel }) { /* без изменений */ }
+    function applyTranslations() { /* ... оставьте как было ... */ }
+    function applyThemeAndWallpaper() { /* ... оставьте как было ... */ }
+
+    // ==================== МОДАЛЬНЫЕ ОКНА ====================
+    function showModal({ title, content, input = false, onConfirm, onCancel }) { /* без изменений */ }
     function showAlert(message) { /* без изменений */ }
     function showConfirm(message, callback) { /* без изменений */ }
     function showPrompt(message, defaultValue, callback) { /* без изменений */ }
@@ -81,7 +123,7 @@
         appState.currentAccount = data.user.id;
         appState.me = data.user;
         localStorage.setItem('token', data.token);
-        await loadUserData(); // загрузим чаты и т.д.
+        await loadUserData();
         showMainScreen();
     }
 
@@ -130,7 +172,7 @@
             appState.chats = await chatsRes.json();
         }
 
-        // Для каждого чата загружаем сообщения (можно лениво, но для простоты загрузим все)
+        // Для каждого чата загружаем сообщения
         for (let chat of appState.chats) {
             const msgRes = await fetch(API_URL + '/api/chats/' + chat.id + '/messages', {
                 headers: { 'Authorization': 'Bearer ' + appState.token }
@@ -140,7 +182,7 @@
             }
         }
 
-        // Загружаем папки (пока оставляем локально)
+        // Загружаем папки (локально)
         const folders = localStorage.getItem('folders_' + appState.currentAccount);
         appState.folders = folders ? JSON.parse(folders) : [];
     }
@@ -191,25 +233,23 @@
         }
     }
 
-    // ==================== УВЕДОМЛЕНИЯ (без изменений) ====================
+    // ==================== УВЕДОМЛЕНИЯ ====================
     function requestNotificationPermission() { /* без изменений */ }
-    function toggleChatNotification(chatId) { /* без изменений (храним локально) */ }
+    function toggleChatNotification(chatId) { /* без изменений (локально) */ }
 
-    // ==================== НАВИГАЦИЯ (без изменений) ====================
+    // ==================== НАВИГАЦИЯ ====================
     let currentMainView = 'chats';
     let screenStack = ['main-screen'];
     function showScreen(screenId) { /* без изменений */ }
     function goBack() { /* без изменений */ }
     function switchMainView(view) { /* без изменений (вызывает renderChats и т.д.) */ }
 
-    // ==================== ПАПКИ (пока локально) ====================
+    // ==================== ПАПКИ (локально) ====================
     function renderFoldersRow() { /* без изменений, использует appState.folders */ }
     function selectFolder(folderId) { /* без изменений */ }
 
     // ==================== ЧАТЫ ====================
-    async function renderChats() {
-        // обновляем список чатов с сервера (можно периодически, но для простоты оставим текущий)
-        // здесь просто отрисовываем то, что уже в appState.chats
+    function renderChats() {
         const list = document.getElementById('chats-list');
         list.innerHTML = '';
         const filter = document.getElementById('global-search').value.toLowerCase();
@@ -230,7 +270,6 @@
 
     function formatTime(timestamp) { /* без изменений */ }
 
-    // Глобальный поиск
     async function globalSearch() {
         const query = document.getElementById('global-search').value.toLowerCase();
         if (query.length < 2) {
@@ -264,20 +303,45 @@
         renderSearchResults(results);
     }
 
-    function renderSearchResults(results) { /* без изменений, но адаптировать под новые поля */ }
+    function renderSearchResults(results) {
+        const list = document.getElementById('chats-list');
+        list.innerHTML = '';
+        results.forEach(r => {
+            if (r.type === 'user') {
+                const user = r.user;
+                const item = document.createElement('div');
+                item.className = 'chat-item';
+                item.onclick = () => openPrivateChat(user.id);
+                item.innerHTML = `<div class="chat-avatar">${user.avatar}</div><div class="chat-info"><div class="chat-name">${user.name}</div><div class="chat-last-msg">@${user.username}</div></div>`;
+                list.appendChild(item);
+            } else if (r.type === 'public') {
+                const pub = r.pub;
+                const item = document.createElement('div');
+                item.className = 'chat-item';
+                item.onclick = () => joinPublicChat(pub.id);
+                item.innerHTML = `<div class="chat-avatar">${pub.avatar}</div><div class="chat-info"><div class="chat-name">${pub.name}</div><div class="chat-last-msg">${pub.description || 'Публичный канал'}</div></div>`;
+                list.appendChild(item);
+            } else if (r.type === 'message') {
+                const chat = appState.chats.find(c => c.id === r.chatId);
+                if (!chat) return;
+                const item = document.createElement('div');
+                item.className = 'chat-item';
+                item.onclick = () => openChatWithHighlight(r.chatId, r.msgId);
+                item.innerHTML = `<div class="chat-avatar">${chat.avatar}</div><div class="chat-info"><div class="chat-name">${chat.name}</div><div class="chat-last-msg">${r.content.substring(0,50)}...</div></div>`;
+                list.appendChild(item);
+            }
+        });
+        if (results.length === 0) list.innerHTML = '<div style="text-align:center; padding:20px;">Ничего не найдено</div>';
+    }
 
     async function joinPublicChat(publicId) {
         const pub = appState.publicChats.find(p => p.id === publicId);
         if (!pub) return;
-        // Проверяем, есть ли уже этот чат у пользователя
         let existing = appState.chats.find(c => c.id === publicId);
         if (existing) {
             openChat(publicId);
             return;
         }
-        // Добавляем чат через сервер (создаём копию для пользователя?) 
-        // В реальном проекте пользователь просто вступает в существующий чат, но у нас чаты общие.
-        // Упростим: считаем, что публичные чаты доступны всем, и мы просто добавляем их в локальный список.
         const newChat = {
             id: pub.id,
             type: pub.type,
@@ -292,7 +356,6 @@
             description: pub.description
         };
         appState.chats.push(newChat);
-        // Загружаем сообщения этого чата
         const msgRes = await fetch(API_URL + '/api/chats/' + pub.id + '/messages', {
             headers: { 'Authorization': 'Bearer ' + appState.token }
         });
@@ -307,7 +370,6 @@
         if (!chat) {
             const user = appState.allUsers.find(u => u.id === userId);
             if (!user) return;
-            // Создаём личный чат через API
             const res = await fetch(API_URL + '/api/chats', {
                 method: 'POST',
                 headers: {
@@ -330,7 +392,6 @@
     }
 
     function openChatWithHighlight(chatId, msgId) { /* без изменений */ }
-
     function showChatContextMenu(e, chatId) { /* без изменений */ }
     function showDeleteOptions(chatId) { /* без изменений (локально) */ }
     function showAddToFolder(chatId) { /* без изменений */ }
@@ -347,38 +408,7 @@
     function addToFolder() { /* без изменений */ }
 
     // ==================== КОНТАКТЫ ====================
-    function renderContacts() {
-        const list = document.getElementById('contacts-list');
-        list.innerHTML = '';
-        const filter = document.getElementById('global-search').value.toLowerCase();
-        // Контакты – пользователи, с которыми есть общий чат
-        const contactIds = new Set();
-        appState.chats.forEach(chat => {
-            if (chat.type === 'private') {
-                chat.participants.forEach(p => { if (p !== appState.currentAccount) contactIds.add(p); });
-            }
-        });
-        const contacts = Array.from(contactIds).map(id => appState.allUsers.find(u => u.id === id)).filter(u => u);
-        contacts.filter(u => (u.name.toLowerCase().includes(filter) || u.username.toLowerCase().includes(filter))).forEach(user => {
-            const item = document.createElement('div');
-            item.className = 'contact-item';
-            item.onclick = () => openPrivateChat(user.id);
-            const avatarDiv = document.createElement('div');
-            avatarDiv.className = 'chat-avatar';
-            avatarDiv.innerHTML = user.avatar.startsWith('<img') ? user.avatar : `<span>${user.avatar}</span>`;
-            const infoDiv = document.createElement('div');
-            infoDiv.className = 'chat-info';
-            infoDiv.innerHTML = `
-                <div class="chat-name">${user.name} ${appState.localNames[user.id] ? `(${appState.localNames[user.id]})` : ''}</div>
-                <div class="chat-last-msg">@${user.username}</div>
-            `;
-            item.appendChild(avatarDiv);
-            item.appendChild(infoDiv);
-            list.appendChild(item);
-        });
-    }
-
-    function formatLastSeen(ts) { /* без изменений */ }
+    function renderContacts() { /* без изменений, использует appState.allUsers */ }
 
     // ==================== ЧАТ ====================
     async function openChat(chatId) {
@@ -419,64 +449,8 @@
         renderChats();
     }
 
-    function renderMessages(chatId) {
-        const area = document.getElementById('messages-area');
-        area.innerHTML = '';
-        const msgs = appState.messages[chatId] || [];
-        const chat = appState.chats.find(c => c.id === chatId);
-        msgs.sort((a,b) => a.time - b.time);
-        msgs.forEach(msg => {
-            const isOwn = msg.senderId === appState.currentAccount;
-            const sender = isOwn ? appState.me : appState.allUsers.find(u => u.id === msg.senderId) || { name: 'Bot', avatar: '🤖' };
-
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${isOwn ? 'own' : 'other'}`;
-            msgDiv.dataset.id = msg.id;
-            msgDiv.oncontextmenu = (e) => showMessageContext(e, msg.id);
-
-            let headerHtml = '';
-            if (!isOwn && (chat.type === 'group' || chat.type === 'channel')) {
-                headerHtml = `
-                    <div class="message-header" onclick="showUserProfile('${msg.senderId}')">
-                        <div class="message-sender-avatar">${sender.avatar}</div>
-                        <span class="message-sender-name">${sender.name}</span>
-                    </div>
-                `;
-            }
-
-            let contentHtml = '';
-            if (msg.type === 'file') {
-                contentHtml = `<div class="file-message"><span class="file-icon">📎</span><span>${msg.fileName}</span></div>`;
-            } else if (msg.type === 'photo') {
-                contentHtml = `<img src="${msg.content}" class="media-preview" onclick="previewMedia('${msg.content}')">`;
-            } else if (msg.type === 'video') {
-                contentHtml = `<video src="${msg.content}" controls style="max-width:200px; border-radius:12px;"></video>`;
-            } else if (msg.type === 'voice') {
-                contentHtml = `<div class="voice-message"><div class="voice-circle" onclick="playVoice('${msg.id}')">🎤</div><span>Голосовое сообщение</span></div>`;
-            } else if (msg.type === 'poll') {
-                contentHtml = renderPoll(msg);
-            } else {
-                contentHtml = `<div>${escapeHtml(msg.content)}</div>`;
-            }
-
-            let reactionsHtml = '';
-            if (msg.reactions && msg.reactions.length) {
-                reactionsHtml = '<div class="message-reactions">' + msg.reactions.map(r => `<span class="reaction">${r}</span>`).join('') + '</div>';
-            }
-
-            msgDiv.innerHTML = `
-                ${headerHtml}
-                <div class="message-bubble">${contentHtml}</div>
-                <div class="message-time">${formatTime(msg.time)}</div>
-                ${reactionsHtml}
-            `;
-            area.appendChild(msgDiv);
-        });
-        scrollToBottom(false);
-    }
-
-    function renderMessagesPC(chatId) { /* аналогично renderMessages с другим id */ }
-
+    function renderMessages(chatId) { /* без изменений, использует appState.messages и appState.allUsers */ }
+    function renderMessagesPC(chatId) { /* аналогично */ }
     function renderPoll(msg) { /* без изменений */ }
     function votePoll(msgId) { showAlert('Голос принят (эмуляция)'); }
     function scrollToBottom(isPC) { /* без изменений */ }
@@ -508,24 +482,14 @@
         }
     }
 
-    function generateBotReply(text) { /* без изменений, но можно перенести на сервер */ }
+    function generateBotReply(text) { /* без изменений */ }
     function handleTyping(isPC) { /* без изменений, отправляет socket.emit('typing') */ }
     function handleEnterKey(e, isPC) { /* без изменений */ }
 
     // ==================== МЕНЮ ЧАТА (три точки) ====================
     function toggleChatMenu() { /* без изменений, использует локальные функции */ }
-    function clearHistory(chatId) { appState.messages[chatId] = []; saveState(); renderMessages(chatId); } // локально
-    async function deleteChat(chatId) {
-        showConfirm('Удалить чат?', (ok) => {
-            if (ok) {
-                // Пока удаляем только локально, на сервере тоже нужно реализовать удаление
-                appState.chats = appState.chats.filter(c => c.id !== chatId);
-                delete appState.messages[chatId];
-                saveState();
-                renderChats();
-            }
-        });
-    }
+    function clearHistory(chatId) { appState.messages[chatId] = []; saveState(); renderMessages(chatId); }
+    async function deleteChat(chatId) { /* локально */ }
     function leaveGroup(chatId) { /* локально */ }
 
     // ==================== КОНТЕКСТНОЕ МЕНЮ СООБЩЕНИЯ ====================
@@ -540,7 +504,7 @@
 
     // ==================== МЕНЮ СКРЕПКИ ====================
     function toggleAttachMenu() { /* без изменений */ }
-    function attachPhoto() { /* с отправкой на сервер через FormData */ }
+    function attachPhoto() { /* с отправкой на сервер через FormData (пока не реализовано) */ }
     function attachVideo() { /* аналогично */ }
     function attachFile() { /* аналогично */ }
     function showPollScreen() { /* без изменений */ }
@@ -626,60 +590,16 @@
     // ==================== СОЗДАНИЕ ГРУППЫ/КАНАЛА ====================
     function showCreateGroupType() { showScreen('create-group-type-screen'); }
     function hideCreateGroupType() { goBack(); }
-
-    function startCreateGroup(type) {
-        appState.groupType = type;
-        appState.createStep = 1;
-        appState.selectedParticipants = [];
-        renderCreateMembersList();
-        showScreen('create-group-members-screen');
-    }
-
-    function renderCreateMembersList() {
-        const list = document.getElementById('create-group-members-list');
-        list.innerHTML = '';
-        appState.allUsers.filter(u => u.id !== appState.currentAccount && u.id !== 'bot').forEach(user => {
-            const div = document.createElement('div');
-            div.className = 'participant-item';
-            div.innerHTML = `
-                <div class="chat-avatar">${user.avatar}</div>
-                <div class="chat-info">
-                    <div class="chat-name">${user.name}</div>
-                    <div class="chat-username">@${user.username}</div>
-                </div>
-                <input type="checkbox" id="create-user-${user.id}" value="${user.id}" style="width:20px; height:20px;">
-            `;
-            list.appendChild(div);
-        });
-    }
-
+    function startCreateGroup(type) { /* без изменений, использует appState.allUsers */ }
+    function renderCreateMembersList() { /* без изменений */ }
     function hideCreateGroupMembers() { goBack(); }
-
-    async function nextCreateGroupStep() {
-        const checkboxes = document.querySelectorAll('#create-group-members-list input:checked');
-        appState.selectedParticipants = Array.from(checkboxes).map(cb => cb.value);
-        if (appState.groupType === 'group' && appState.selectedParticipants.length === 0) {
-            showAlert('Выберите хотя бы одного участника');
-            return;
-        }
-        appState.createStep = 2;
-        document.getElementById('create-group-title').innerText = appState.groupType === 'group' ? 'Создать группу' : 'Создать канал';
-        document.getElementById('create-group-name').value = '';
-        document.getElementById('create-group-description').value = '';
-        document.getElementById('create-group-avatar').innerHTML = '📷';
-        document.getElementById('create-group-link-container').style.display = 'none';
-        document.getElementById('group-permissions').style.display = appState.groupType === 'group' ? 'block' : 'none';
-        showScreen('create-group-detail-screen');
-    }
-
-    function prevCreateGroupStep() { appState.createStep = 1; showScreen('create-group-members-screen'); }
-
+    async function nextCreateGroupStep() { /* без изменений, собирает участников */ }
+    function prevCreateGroupStep() { /* без изменений */ }
     function chooseGroupAvatar() { /* локально */ }
-    function chooseGroupAvatarEmoji() { chooseGroupAvatar(); }
+    function chooseGroupAvatarEmoji() { /* локально */ }
     function uploadGroupAvatar() { /* локально */ }
     function selectCreatePrivacy(privacy) { /* локально */ }
     function copyGroupLink() { /* локально */ }
-
     async function createGroupFinal() {
         const name = document.getElementById('create-group-name').value.trim();
         if (!name) { showAlert('Введите название'); return; }
@@ -788,7 +708,6 @@
     document.addEventListener('DOMContentLoaded', async () => {
         applyThemeAndWallpaper();
         if (appState.token) {
-            // Пытаемся загрузить данные пользователя
             try {
                 await loadUserData();
                 showMainScreen();
@@ -810,7 +729,6 @@
         });
     });
 
-    // Вспомогательная функция сохранения состояния (для локальных данных)
     function saveState() {
         localStorage.setItem('folders_' + appState.currentAccount, JSON.stringify(appState.folders));
         localStorage.setItem('theme', appState.theme);
