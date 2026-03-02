@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -19,29 +20,24 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// Регистрация
+// ==================== АУТЕНТИФИКАЦИЯ ====================
 app.post('/api/register', async (req, res) => {
   const { username, password, name } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (data.findUserByUsername(username)) return res.status(400).json({ error: 'User already exists' });
 
   const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = {
-    id: username,
+  const newUser = data.addUser({
     username,
     password: hashedPassword,
     name: name || username,
-    avatar: '👤',
-    birthday: '',
-    phone: ''
-  };
-  data.addUser(newUser);
+    avatar: '👤'
+  });
 
-  const token = jwt.sign({ id: username, username }, JWT_SECRET);
-  res.json({ token, user: { id: username, name: newUser.name, avatar: newUser.avatar } });
+  const token = jwt.sign({ id: newUser.id, username: newUser.username }, JWT_SECRET);
+  res.json({ token, user: { id: newUser.id, name: newUser.name, avatar: newUser.avatar, username: newUser.username } });
 });
 
-// Вход
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   const user = data.findUserByUsername(username);
@@ -50,79 +46,83 @@ app.post('/api/login', async (req, res) => {
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) return res.status(400).json({ error: 'Invalid credentials' });
 
-  const token = jwt.sign({ id: username, username }, JWT_SECRET);
-  res.json({ token, user: { id: username, name: user.name, avatar: user.avatar } });
+  const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+  res.json({ token, user: { id: user.id, name: user.name, avatar: user.avatar, username: user.username } });
 });
 
-// Все пользователи
+// ==================== ПОЛЬЗОВАТЕЛИ ====================
 app.get('/api/users', authenticateToken, (req, res) => {
   res.json(data.getAllUsers());
 });
 
-// Публичные чаты
-app.get('/api/public-chats', authenticateToken, (req, res) => {
-  res.json(data.getPublicChats());
+app.get('/api/users/:id', authenticateToken, (req, res) => {
+  const user = data.findUserById(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ id: user.id, name: user.name, username: user.username, avatar: user.avatar, bio: user.bio, lastSeen: user.lastSeen });
 });
 
-// Чаты пользователя
+// ==================== ЧАТЫ ====================
 app.get('/api/chats', authenticateToken, (req, res) => {
-  res.json(data.getChatsForUser(req.user.id));
+  const chats = data.getChatsForUser(req.user.id);
+  // Обогащаем чаты информацией о пользователях для отображения
+  const enrichedChats = chats.map(chat => {
+    if (chat.type === 'private') {
+      const otherParticipantId = chat.participants.find(p => p != req.user.id);
+      const otherUser = data.findUserById(otherParticipantId);
+      return {
+        ...chat,
+        name: otherUser?.name || 'Deleted User',
+        avatar: otherUser?.avatar || '👤'
+      };
+    }
+    return chat;
+  });
+  res.json(enrichedChats);
 });
 
-// Создать чат
 app.post('/api/chats', authenticateToken, (req, res) => {
-  const { type, name, avatar, participants, description, privacy, permissions, link, owner } = req.body;
-  const newChat = {
-    id: (type === 'group' ? 'group_' : type === 'channel' ? 'channel_' : 'private_') + Date.now(),
+  const { type, name, avatar, participants, description, privacy, permissions } = req.body;
+  const newChat = data.addChat({
     type,
-    name,
-    avatar: avatar || '📷',
-    participants: [req.user.id, ...(participants || [])],
-    lastMessage: type === 'group' ? 'Группа создана' : type === 'channel' ? 'Канал создан' : '',
-    lastTime: Date.now(),
-    unread: 0,
-    pinned: false,
+    name: type === 'private' ? '' : name, // Для лички имя подставим позже
+    avatar: avatar || (type === 'private' ? '' : '📷'),
+    participants: participants || [],
     description: description || '',
     privacy: privacy || 'public',
-    public: privacy === 'public',
-    link: link || null,
-    owner: owner || req.user.id,
-    admins: [req.user.id],
-    permissions: permissions || {},
-    banned: []
-  };
-  data.addChat(newChat);
+    owner: req.user.id,
+    permissions: permissions || {}
+  });
   res.json(newChat);
 });
 
-// Сообщения чата
+// ==================== СООБЩЕНИЯ ====================
 app.get('/api/chats/:id/messages', authenticateToken, (req, res) => {
-  res.json(data.getMessages(req.params.id));
+  const limit = parseInt(req.query.limit) || 50;
+  const before = req.query.before ? parseInt(req.query.before) : null;
+  res.json(data.getMessages(req.params.id, limit, before));
 });
 
-// Отправить сообщение
 app.post('/api/chats/:id/messages', authenticateToken, (req, res) => {
   const chatId = req.params.id;
-  const { content, type, fileName, pollQuestion, pollOptions, pollMultiple, pollQuiz } = req.body;
-  const newMsg = {
-    id: Date.now().toString(),
+  const { content, type, replyTo, pollQuestion, pollOptions, pollMultiple, pollQuiz } = req.body;
+  
+  const newMsg = data.addMessage(chatId, {
     senderId: req.user.id,
     content: content || '',
-    time: Date.now(),
     type: type || 'text',
-    reactions: [],
-    fileName,
+    replyTo,
     pollQuestion,
     pollOptions,
     pollMultiple,
     pollQuiz
-  };
-  data.addMessage(chatId, newMsg);
-  io.to(chatId).emit('newMessage', { ...newMsg, chatId });
+  });
+  
+  // Отправляем через сокет всем в чате
+  io.to(chatId).emit('new_message', newMsg);
   res.json(newMsg);
 });
 
-// WebSocket
+// ==================== СОКЕТ ====================
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) return next(new Error('Authentication error'));
@@ -134,22 +134,32 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.user.username}`);
-
-  socket.on('joinChat', (chatId) => {
+  console.log(`User connected: ${socket.user.username} (${socket.user.id})`);
+  
+  // Обновляем статус пользователя на "онлайн"
+  data.updateUser(socket.user.id, { status: 'online', lastSeen: new Date().toISOString() });
+  
+  socket.on('join_chat', (chatId) => {
     socket.join(chatId);
+    console.log(`${socket.user.username} joined chat ${chatId}`);
   });
-
-  socket.on('leaveChat', (chatId) => {
+  
+  socket.on('leave_chat', (chatId) => {
     socket.leave(chatId);
   });
-
+  
   socket.on('typing', ({ chatId, isTyping }) => {
-    socket.to(chatId).emit('userTyping', { username: socket.user.username, isTyping });
+    socket.to(chatId).emit('user_typing', { userId: socket.user.id, username: socket.user.username, isTyping });
   });
-
+  
+  socket.on('mark_read', ({ chatId, messageId }) => {
+    // Логика отметки прочтения
+    socket.to(chatId).emit('message_read', { userId: socket.user.id, messageId });
+  });
+  
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.user.username}`);
+    data.updateUser(socket.user.id, { status: 'offline', lastSeen: new Date().toISOString() });
   });
 });
 
