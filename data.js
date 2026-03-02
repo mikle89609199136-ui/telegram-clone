@@ -1,4 +1,3 @@
-// data.js
 const fs = require('fs-extra');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
@@ -8,10 +7,8 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
 const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
 
-// Гарантируем, что папка data существует
 fs.ensureDirSync(DATA_DIR);
 
-// Инициализация файлов, если их нет
 const initFile = (file, defaultData) => {
   if (!fs.existsSync(file)) {
     fs.writeJsonSync(file, defaultData, { spaces: 2 });
@@ -21,19 +18,15 @@ initFile(USERS_FILE, {});
 initFile(CHATS_FILE, {});
 initFile(MESSAGES_FILE, {});
 
-// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 const readJSON = (file) => fs.readJsonSync(file);
 const writeJSON = (file, data) => fs.writeJsonSync(file, data, { spaces: 2 });
 
-// ==================== ПОЛЬЗОВАТЕЛИ ====================
 function addUser(user) {
   const users = readJSON(USERS_FILE);
-  // Генерируем уникальный числовой ID, как в Telegram
   const userId = Date.now() + Math.floor(Math.random() * 1000);
   const newUser = { 
     ...user, 
     id: userId, 
-    password: user.password, // уже захеширован
     createdAt: new Date().toISOString(),
     lastSeen: new Date().toISOString(),
     status: 'online',
@@ -59,13 +52,7 @@ function findUserById(id) {
 function getAllUsers() {
   const users = readJSON(USERS_FILE);
   return Object.values(users).map(u => ({
-    id: u.id,
-    name: u.name,
-    username: u.username,
-    avatar: u.avatar,
-    bio: u.bio,
-    lastSeen: u.lastSeen,
-    status: u.status
+    id: u.id, name: u.name, username: u.username, avatar: u.avatar, bio: u.bio, lastSeen: u.lastSeen, status: u.status
   }));
 }
 
@@ -78,7 +65,6 @@ function updateUser(id, updates) {
   return users[id];
 }
 
-// ==================== ЧАТЫ ====================
 function addChat(chat) {
   const chats = readJSON(CHATS_FILE);
   const chatId = chat.id || `chat_${uuidv4()}`;
@@ -86,7 +72,7 @@ function addChat(chat) {
     ...chat,
     id: chatId,
     createdAt: new Date().toISOString(),
-    participants: [...new Set([chat.owner, ...(chat.participants || [])])], // Уникальные участники
+    participants: [...new Set([chat.owner, ...(chat.participants || [])])],
     admins: chat.admins || [chat.owner],
     permissions: chat.permissions || {},
     banned: [],
@@ -118,15 +104,13 @@ function updateChat(chatId, updates) {
   return chats[chatId];
 }
 
-// ==================== СООБЩЕНИЯ ====================
 function addMessage(chatId, message) {
   const messages = readJSON(MESSAGES_FILE);
   if (!messages[chatId]) messages[chatId] = [];
-  
   const newMsg = {
     ...message,
     id: message.id || `msg_${uuidv4()}`,
-    chatId: chatId,
+    chatId,
     time: message.time || Date.now(),
     reactions: message.reactions || {},
     replyTo: message.replyTo || null,
@@ -134,28 +118,21 @@ function addMessage(chatId, message) {
   };
   messages[chatId].push(newMsg);
   writeJSON(MESSAGES_FILE, messages);
-  
-  // Обновляем lastMessage в чате
   updateChat(chatId, {
     lastMessage: newMsg.content || (newMsg.type === 'poll' ? '📊 Опрос' : '📎 Медиа'),
     lastMessageTime: newMsg.time
   });
-  
   return newMsg;
 }
 
 function getMessages(chatId, limit = 50, before = null) {
   const messages = readJSON(MESSAGES_FILE);
   let msgs = messages[chatId] || [];
-  // Сортируем по времени (от новых к старым)
   msgs.sort((a, b) => b.time - a.time);
-  if (before) {
-    msgs = msgs.filter(m => m.time < before);
-  }
+  if (before) msgs = msgs.filter(m => m.time < before);
   return msgs.slice(0, limit);
 }
 
-// Экспортируем все новые функции
 module.exports = {
   addUser,
   findUserByUsername,
