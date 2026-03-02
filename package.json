@@ -1,7 +1,8 @@
+// package.json
 {
   "name": "zhuravlev-telegram",
-  "version": "12.3.0",
-  "description": "Telegram-like application with server API",
+  "version": "13.0.0",
+  "description": "Telegram clone with server-side persistence",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -12,6 +13,8 @@
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.0",
-    "socket.io": "^4.5.4"
+    "socket.io": "^4.5.4",
+    "uuid": "^9.0.0",
+    "fs-extra": "^11.1.1"
   }
 }
