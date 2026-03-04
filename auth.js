@@ -1,97 +1,111 @@
-// auth.js
-import express from 'express'
-import bcrypt from 'bcrypt'
-import jwt from 'jsonwebtoken'
-import { v4 as uuidv4 } from 'uuid'
-import {
-  createUser,
-  findUserByUsername,
-  createDevice,
-  pool
-} from './data.js'
+---
 
-const router = express.Router()
+## 📁 Файл 5: `auth.js`
 
-function generateAccessToken(userId, deviceId) {
-  return jwt.sign(
-    { sub: userId, deviceId },
-    process.env.JWT_ACCESS_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRES }
-  )
-}
+```javascript
+// auth.js – регистрация и вход
 
-function generateRefreshToken(userId, deviceId) {
-  return jwt.sign(
-    { sub: userId, deviceId },
-    process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRES }
-  )
-}
+const express = require('express');
+const router = express.Router();
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const { getData, saveData } = require('./data');
 
-// REGISTER
 router.post('/register', async (req, res) => {
-  const { username, password, deviceName } = req.body
-
-  if (!username || !password)
-    return res.status(400).json({ error: 'Missing fields' })
-
-  const existing = await findUserByUsername(username)
-  if (existing)
-    return res.status(409).json({ error: 'User exists' })
-
-  const hash = await bcrypt.hash(password, 10)
-  const userId = await createUser(username, hash)
-
-  const tempDeviceId = uuidv4()
-  const refreshToken = generateRefreshToken(userId, tempDeviceId)
-  const deviceId = await createDevice(userId, deviceName || "Browser", refreshToken)
-
-  const accessToken = generateAccessToken(userId, deviceId)
-
-  res.json({ accessToken, refreshToken, deviceId })
-})
-
-// LOGIN
-router.post('/login', async (req, res) => {
-  const { username, password, deviceName } = req.body
-
-  const user = await findUserByUsername(username)
-  if (!user) return res.status(404).json({ error: 'User not found' })
-
-  const valid = await bcrypt.compare(password, user.password_hash)
-  if (!valid) return res.status(401).json({ error: 'Wrong password' })
-
-  const tempDeviceId = uuidv4()
-  const refreshToken = generateRefreshToken(user.id, tempDeviceId)
-  const deviceId = await createDevice(user.id, deviceName || "Browser", refreshToken)
-
-  const accessToken = generateAccessToken(user.id, deviceId)
-
-  res.json({ accessToken, refreshToken, deviceId })
-})
-
-// REFRESH
-router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body
-  if (!refreshToken) return res.status(400).json({ error: 'No token' })
-
   try {
-    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET)
-    const { sub, deviceId } = payload
+    const { username, password } = req.body;
+    if (!username || !password || password.length < 6) {
+      return res.status(400).json({ error: 'Invalid username or password (min 6 chars)' });
+    }
 
-    const result = await pool.query(
-      `SELECT revoked_at FROM devices WHERE id=$1 AND user_id=$2`,
-      [deviceId, sub]
-    )
+    const users = getData('users.json');
+    if (users.find(u => u.username === username)) {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
 
-    if (!result.rows.length || result.rows[0].revoked_at)
-      return res.status(403).json({ error: 'Device revoked' })
+    const hashed = await bcrypt.hash(password, 12);
+    const user = {
+      id: uuidv4(),
+      username,
+      password: hashed,
+      avatar: null,
+      status: 'online',
+      lastSeen: new Date().toISOString(),
+      createdAt: new Date().toISOString()
+    };
+    users.push(user);
+    saveData('users.json', users);
 
-    const accessToken = generateAccessToken(sub, deviceId)
-    res.json({ accessToken })
-  } catch {
-    res.status(403).json({ error: 'Invalid refresh' })
+    // Создаём устройство
+    const devices = getData('devices.json');
+    const deviceId = uuidv4();
+    devices.push({
+      id: deviceId,
+      userId: user.id,
+      name: req.headers['user-agent'] || 'Unknown',
+      ip: req.ip,
+      lastSeen: new Date().toISOString(),
+      revoked: false
+    });
+    saveData('devices.json', devices);
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, deviceId },
+      process.env.JWT_SECRET,
+      { expiresIn: '365d' }
+    );
+    res.status(201).json({ token, user: { id: user.id, username: user.username, avatar: user.avatar } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
   }
-})
+});
 
-export default router
+router.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const users = getData('users.json');
+    const user = users.find(u => u.username === username);
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Обновляем или создаём устройство
+    const devices = getData('devices.json');
+    let deviceId = req.body.deviceId;
+    let device = devices.find(d => d.id === deviceId && d.userId === user.id && !d.revoked);
+    if (!device) {
+      deviceId = uuidv4();
+      devices.push({
+        id: deviceId,
+        userId: user.id,
+        name: req.headers['user-agent'] || 'Unknown',
+        ip: req.ip,
+        lastSeen: new Date().toISOString(),
+        revoked: false
+      });
+      saveData('devices.json', devices);
+    } else {
+      device.lastSeen = new Date().toISOString();
+      saveData('devices.json', devices);
+    }
+
+    user.status = 'online';
+    user.lastSeen = new Date().toISOString();
+    saveData('users.json', users);
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username, deviceId },
+      process.env.JWT_SECRET,
+      { expiresIn: '365d' }
+    );
+    res.json({ token, user: { id: user.id, username: user.username, avatar: user.avatar } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+module.exports = router;
