@@ -1,43 +1,65 @@
-// ai.js
-import { saveMessage } from './data.js'
-
-export const AI_USER_ID = "00000000-0000-0000-0000-000000000001"
+// ai.js – несколько ассистентов с разными ролями
 
 const assistants = {
   general: {
-    name: "General Assistant",
-    reply: async (text) => {
-      return `🧠 AI: Вы сказали "${text}". Я помогу вам.`
-    }
+    name: 'General Assistant',
+    responses: [
+      "Привет! Чем я могу помочь?",
+      "Интересно...",
+      "Я всего лишь простой бот.",
+      "Отличная идея!",
+      "Извините, я не понял. Можете перефразировать?",
+      "Да, конечно!",
+      "Нет, я так не думаю.",
+      "Хорошо, я запомнил.",
+      "Это забавно!",
+      "Спасибо за сообщение!"
+    ]
   },
-  coder: {
-    name: "Code Assistant",
-    reply: async (text) => {
-      return `💻 Code AI: Вот идея для "${text}" — попробуйте разделить на модули.`
-    }
+  tech: {
+    name: 'Tech Support',
+    responses: [
+      "Здравствуйте! Это техподдержка. Опишите вашу проблему.",
+      "Попробуйте перезагрузить приложение.",
+      "Мы уже работаем над исправлением.",
+      "Ваш запрос передан разработчикам.",
+      "Спасибо за обращение! Скоро ответим."
+    ]
   },
-  analyst: {
-    name: "Analyst",
-    reply: async (text) => {
-      return `📊 Analyst AI: Давайте разберём это логически: ${text}`
-    }
+  funny: {
+    name: 'Joker',
+    responses: [
+      "Ха-ха, смешно!",
+      "Расскажи анекдот!",
+      "А давай поиграем в игру?",
+      "Шутка дня: почему программисты любят тёмную тему? Потому что свет привлекает баги!",
+      "Ты сегодня отлично выглядишь!"
+    ]
   }
+};
+
+function getResponse(message, chatId = null) {
+  // Можно выбирать бота в зависимости от chatId или контекста
+  // Для простоты берём general
+  const bot = assistants.general;
+  const lower = message.toLowerCase();
+  
+  // Приветствия
+  if (lower.includes('привет')) return 'И тебе привет! 👋';
+  if (lower.includes('как дела')) return 'У меня всё отлично, спасибо!';
+  if (lower.includes('бот')) return 'Да, я бот. Рад познакомиться!';
+  if (lower.includes('помощь') || lower.includes('help')) return 'Я могу отвечать на простые вопросы. Попробуй что-нибудь спросить.';
+  if (lower.includes('спасибо')) return 'Пожалуйста! 😊';
+  
+  // Случайный ответ из выбранного ассистента
+  return bot.responses[Math.floor(Math.random() * bot.responses.length)];
 }
 
-export async function handleAIMessage(io, senderId, content, assistantType = "general") {
-  const assistant = assistants[assistantType]
-  if (!assistant) return
-
-  const reply = await assistant.reply(content)
-
-  await saveMessage(AI_USER_ID, senderId, reply)
-
-  io.to(`user:${senderId}`).emit('message', {
-    senderId: AI_USER_ID,
-    content: reply
-  })
+function getAssistantList() {
+  return Object.keys(assistants).map(key => ({
+    id: key,
+    name: assistants[key].name
+  }));
 }
 
-export function listAssistants() {
-  return Object.keys(assistants)
-}
+module.exports = { getResponse, getAssistantList };
