@@ -1,148 +1,92 @@
-const fs = require('fs-extra');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+// data.js
+import pkg from 'pg'
+import { v4 as uuidv4 } from 'uuid'
 
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const CHATS_FILE = path.join(DATA_DIR, 'chats.json');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
+const { Pool } = pkg
 
-fs.ensureDirSync(DATA_DIR);
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('railway')
+    ? { rejectUnauthorized: false }
+    : false
+})
 
-const initFile = (file, defaultData) => {
-  if (!fs.existsSync(file)) {
-    fs.writeJsonSync(file, defaultData, { spaces: 2 });
-  }
-};
-initFile(USERS_FILE, {});
-initFile(CHATS_FILE, {});
-initFile(MESSAGES_FILE, {});
+export async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `)
 
-const readJSON = (file) => fs.readJsonSync(file);
-const writeJSON = (file, data) => fs.writeJsonSync(file, data, { spaces: 2 });
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS devices (
+      id UUID PRIMARY KEY,
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT,
+      refresh_token TEXT,
+      revoked_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `)
 
-function addUser(user) {
-  const users = readJSON(USERS_FILE);
-  const userId = Date.now() + Math.floor(Math.random() * 1000);
-  const newUser = { 
-    ...user, 
-    id: userId, 
-    createdAt: new Date().toISOString(),
-    lastSeen: new Date().toISOString(),
-    status: 'online',
-    avatar: user.avatar || '👤',
-    bio: '',
-    phone: ''
-  };
-  users[userId] = newUser;
-  writeJSON(USERS_FILE, users);
-  return newUser;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id UUID PRIMARY KEY,
+      sender_id UUID,
+      receiver_id UUID,
+      content TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `)
+
+  console.log("✅ Database initialized")
 }
 
-function findUserByUsername(username) {
-  const users = readJSON(USERS_FILE);
-  return Object.values(users).find(u => u.username === username);
+export async function createUser(username, passwordHash) {
+  const id = uuidv4()
+  await pool.query(
+    `INSERT INTO users (id, username, password_hash) VALUES ($1,$2,$3)`,
+    [id, username, passwordHash]
+  )
+  return id
 }
 
-function findUserById(id) {
-  const users = readJSON(USERS_FILE);
-  return users[id];
+export async function findUserByUsername(username) {
+  const res = await pool.query(
+    `SELECT * FROM users WHERE username=$1`,
+    [username]
+  )
+  return res.rows[0]
 }
 
-function getAllUsers() {
-  const users = readJSON(USERS_FILE);
-  return Object.values(users).map(u => ({
-    id: u.id, name: u.name, username: u.username, avatar: u.avatar, bio: u.bio, lastSeen: u.lastSeen, status: u.status
-  }));
+export async function createDevice(userId, name, refreshToken) {
+  const id = uuidv4()
+  await pool.query(
+    `INSERT INTO devices (id,user_id,name,refresh_token)
+     VALUES ($1,$2,$3,$4)`,
+    [id, userId, name, refreshToken]
+  )
+  return id
 }
 
-function updateUser(id, updates) {
-  const users = readJSON(USERS_FILE);
-  if (users[id]) {
-    users[id] = { ...users[id], ...updates };
-    writeJSON(USERS_FILE, users);
-  }
-  return users[id];
+export async function saveMessage(senderId, receiverId, content) {
+  await pool.query(
+    `INSERT INTO messages (id,sender_id,receiver_id,content)
+     VALUES ($1,$2,$3,$4)`,
+    [uuidv4(), senderId, receiverId, content]
+  )
 }
 
-function addChat(chat) {
-  const chats = readJSON(CHATS_FILE);
-  const chatId = chat.id || `chat_${uuidv4()}`;
-  const newChat = {
-    ...chat,
-    id: chatId,
-    createdAt: new Date().toISOString(),
-    participants: [...new Set([chat.owner, ...(chat.participants || [])])],
-    admins: chat.admins || [chat.owner],
-    permissions: chat.permissions || {},
-    banned: [],
-    pinnedMessages: [],
-    lastMessage: chat.lastMessage || null,
-    lastMessageTime: chat.lastMessageTime || Date.now()
-  };
-  chats[chatId] = newChat;
-  writeJSON(CHATS_FILE, chats);
-  return newChat;
+export async function getMessages(userA, userB) {
+  const res = await pool.query(
+    `SELECT * FROM messages
+     WHERE (sender_id=$1 AND receiver_id=$2)
+        OR (sender_id=$2 AND receiver_id=$1)
+     ORDER BY created_at ASC`,
+    [userA, userB]
+  )
+  return res.rows
 }
-
-function getChatsForUser(userId) {
-  const chats = readJSON(CHATS_FILE);
-  return Object.values(chats).filter(c => c.participants.includes(userId));
-}
-
-function getChatById(chatId) {
-  const chats = readJSON(CHATS_FILE);
-  return chats[chatId];
-}
-
-function updateChat(chatId, updates) {
-  const chats = readJSON(CHATS_FILE);
-  if (chats[chatId]) {
-    chats[chatId] = { ...chats[chatId], ...updates };
-    writeJSON(CHATS_FILE, chats);
-  }
-  return chats[chatId];
-}
-
-function addMessage(chatId, message) {
-  const messages = readJSON(MESSAGES_FILE);
-  if (!messages[chatId]) messages[chatId] = [];
-  const newMsg = {
-    ...message,
-    id: message.id || `msg_${uuidv4()}`,
-    chatId,
-    time: message.time || Date.now(),
-    reactions: message.reactions || {},
-    replyTo: message.replyTo || null,
-    edited: false
-  };
-  messages[chatId].push(newMsg);
-  writeJSON(MESSAGES_FILE, messages);
-  updateChat(chatId, {
-    lastMessage: newMsg.content || (newMsg.type === 'poll' ? '📊 Опрос' : '📎 Медиа'),
-    lastMessageTime: newMsg.time
-  });
-  return newMsg;
-}
-
-function getMessages(chatId, limit = 50, before = null) {
-  const messages = readJSON(MESSAGES_FILE);
-  let msgs = messages[chatId] || [];
-  msgs.sort((a, b) => b.time - a.time);
-  if (before) msgs = msgs.filter(m => m.time < before);
-  return msgs.slice(0, limit);
-}
-
-module.exports = {
-  addUser,
-  findUserByUsername,
-  findUserById,
-  getAllUsers,
-  updateUser,
-  addChat,
-  getChatsForUser,
-  getChatById,
-  updateChat,
-  addMessage,
-  getMessages
-};
