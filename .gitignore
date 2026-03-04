@@ -1,6 +1,19 @@
-node_modules/
+# Локальные файлы окружения
 .env
+.env.local
+
+# Зависимости
+node_modules/
+
+# Логи
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Директории с данными и загрузками
 data/
 uploads/
+
+# Системные файлы
 .DS_Store
-npm-debug.log*
+Thumbs.db
