@@ -1,6 +1,3 @@
-// CRAHEAPP.BOT – main AI assistant
-// IRIS – group moderation bot
-
 async function craheappBotChat(message, userId, chatId) {
   // Mock implementation – in production call an external AI API
   return `Echo from CRAHEAPP.BOT: ${message}`;
@@ -54,3 +51,4 @@ module.exports = {
   irisAutoMute,
   irisWarn
 };
+
