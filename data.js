@@ -1,285 +1,314 @@
-"use strict";
+// In‑memory data store with JSON persistence (optional)
+const fs = require('fs');
+const path = require('path');
 
-/* ==========================================================
-   DATA LAYER
-   File-based persistence + in-memory index
-========================================================== */
+const DATA_FILE = path.join(__dirname, 'data.json');
 
-const fs = require("fs");
-const path = require("path");
-
-const DB_PATH = path.join(__dirname, "database.json");
-
-/* ==========================================================
-   INITIAL STRUCTURE
-========================================================== */
-
-let db = {
-    users: [],
-    devices: {},          // userId -> [devices]
-    refreshTokens: {},    // userId -> { deviceId: token }
-    chats: [],
-    messages: {},         // chatId -> [messages]
-    aiLogs: [],
-    moderationLogs: []
+// Initial data structure
+let data = {
+  users: [],
+  chats: [],
+  messages: [],
+  channels: [],
+  bots: [],
+  twoFactorSecrets: new Map()
 };
 
-/* ==========================================================
-   INIT
-========================================================== */
+// Load from file if exists
+if (fs.existsSync(DATA_FILE)) {
+  try {
+    const raw = fs.readFileSync(DATA_FILE);
+    const loaded = JSON.parse(raw);
+    // Convert twoFactorSecrets back to Map
+    loaded.twoFactorSecrets = new Map(loaded.twoFactorSecrets);
+    data = loaded;
+  } catch (e) {
+    console.error('Failed to load data.json', e);
+  }
+}
 
-function init() {
-    if (fs.existsSync(DB_PATH)) {
-        const raw = fs.readFileSync(DB_PATH);
-        db = JSON.parse(raw);
-    } else {
-        persist();
+function saveData() {
+  const toSave = {
+    ...data,
+    twoFactorSecrets: Array.from(data.twoFactorSecrets.entries())
+  };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(toSave, null, 2));
+}
+
+// Users
+function findUserByUsername(username) {
+  return data.users.find(u => u.username === username);
+}
+function findUserById(id) {
+  return data.users.find(u => u.id === id);
+}
+function createUser(user) {
+  data.users.push(user);
+  saveData();
+  return user;
+}
+function getAllUsers() {
+  return data.users.map(({ passwordHash, ...rest }) => rest);
+}
+function updateUser(userId, updates) {
+  const user = findUserById(userId);
+  if (user) Object.assign(user, updates);
+  saveData();
+  return user;
+}
+
+// 2FA
+function setTwoFactorSecret(userId, secret) {
+  data.twoFactorSecrets.set(userId, secret);
+  saveData();
+}
+function getTwoFactorSecret(userId) {
+  return data.twoFactorSecrets.get(userId);
+}
+function enableTwoFactor(userId) {
+  const user = findUserById(userId);
+  if (user) user.twoFactorEnabled = true;
+  saveData();
+}
+function disableTwoFactor(userId) {
+  const user = findUserById(userId);
+  if (user) user.twoFactorEnabled = false;
+  saveData();
+}
+
+// Chats
+function createChat(chat) {
+  chat.id = require('uuid').v4();
+  chat.createdAt = new Date().toISOString();
+  chat.pinnedMessageIds = chat.pinnedMessageIds || [];
+  chat.muted = false;
+  chat.archived = false;
+  data.chats.push(chat);
+  saveData();
+  return chat;
+}
+function getChatsForUser(userId) {
+  return data.chats.filter(c => c.participants.includes(userId) && !c.archived).map(c => ({
+    ...c,
+    lastMessage: data.messages.filter(m => m.chatId === c.id).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null
+  }));
+}
+function getChatById(chatId) {
+  return data.chats.find(c => c.id === chatId);
+}
+function muteChat(chatId, userId) {
+  const chat = getChatById(chatId);
+  if (chat && chat.participants.includes(userId)) chat.muted = true;
+  saveData();
+}
+function unmuteChat(chatId, userId) {
+  const chat = getChatById(chatId);
+  if (chat && chat.participants.includes(userId)) chat.muted = false;
+  saveData();
+}
+function archiveChat(chatId, userId) {
+  const chat = getChatById(chatId);
+  if (chat && chat.participants.includes(userId)) chat.archived = true;
+  saveData();
+}
+
+// Groups
+function addParticipantToGroup(chatId, adminId, newParticipantId) {
+  const chat = getChatById(chatId);
+  if (chat && chat.type === 'group' && chat.adminIds.includes(adminId) && !chat.participants.includes(newParticipantId)) {
+    chat.participants.push(newParticipantId);
+    saveData();
+  }
+}
+function removeParticipantFromGroup(chatId, adminId, targetId) {
+  const chat = getChatById(chatId);
+  if (chat && chat.type === 'group' && chat.adminIds.includes(adminId)) {
+    chat.participants = chat.participants.filter(id => id !== targetId);
+    chat.adminIds = chat.adminIds.filter(id => id !== targetId);
+    saveData();
+  }
+}
+function promoteToAdmin(chatId, adminId, targetId) {
+  const chat = getChatById(chatId);
+  if (chat && chat.type === 'group' && chat.adminIds.includes(adminId) && chat.participants.includes(targetId) && !chat.adminIds.includes(targetId)) {
+    chat.adminIds.push(targetId);
+    saveData();
+  }
+}
+
+// Channels
+function createChannel(channel) {
+  channel.id = require('uuid').v4();
+  channel.createdAt = new Date().toISOString();
+  channel.subscribers = [];
+  channel.admins = [channel.creatorId];
+  channel.posts = [];
+  data.channels.push(channel);
+  saveData();
+  return channel;
+}
+function getChannelById(channelId) {
+  return data.channels.find(c => c.id === channelId);
+}
+function subscribeToChannel(channelId, userId) {
+  const channel = getChannelById(channelId);
+  if (channel && !channel.subscribers.includes(userId)) {
+    channel.subscribers.push(userId);
+    saveData();
+  }
+}
+function unsubscribeFromChannel(channelId, userId) {
+  const channel = getChannelById(channelId);
+  if (channel) {
+    channel.subscribers = channel.subscribers.filter(id => id !== userId);
+    saveData();
+  }
+}
+function createChannelPost(channelId, adminId, content, mediaUrl) {
+  const channel = getChannelById(channelId);
+  if (channel && channel.admins.includes(adminId)) {
+    const post = {
+      id: require('uuid').v4(),
+      channelId,
+      adminId,
+      content,
+      mediaUrl,
+      createdAt: new Date().toISOString(),
+      views: 0
+    };
+    channel.posts.push(post);
+    saveData();
+    return post;
+  }
+  return null;
+}
+
+// Bots
+function createBot(bot) {
+  bot.id = require('uuid').v4();
+  bot.token = require('crypto').randomBytes(32).toString('hex');
+  bot.createdAt = new Date().toISOString();
+  data.bots.push(bot);
+  saveData();
+  return bot;
+}
+function getBotById(botId) {
+  return data.bots.find(b => b.id === botId);
+}
+function getBotsByOwner(ownerId) {
+  return data.bots.filter(b => b.ownerId === ownerId);
+}
+
+// Messages
+function createMessage(message) {
+  message.id = require('uuid').v4();
+  message.createdAt = new Date().toISOString();
+  message.updatedAt = message.createdAt;
+  message.reactions = message.reactions || {};
+  message.deleted = false;
+  message.edited = false;
+  message.views = 0;
+  data.messages.push(message);
+  saveData();
+  return message;
+}
+function getMessagesForChat(chatId) {
+  return data.messages.filter(m => m.chatId === chatId && !m.deleted).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+}
+function getMessageById(messageId) {
+  return data.messages.find(m => m.id === messageId);
+}
+function updateMessage(messageId, updates) {
+  const msg = getMessageById(messageId);
+  if (msg) {
+    Object.assign(msg, updates);
+    msg.updatedAt = new Date().toISOString();
+    msg.edited = true;
+    saveData();
+  }
+  return msg;
+}
+function deleteMessage(messageId) {
+  const msg = getMessageById(messageId);
+  if (msg) {
+    msg.deleted = true;
+    saveData();
+  }
+  return msg;
+}
+function addReaction(messageId, userId, emoji) {
+  const msg = getMessageById(messageId);
+  if (msg) {
+    if (!msg.reactions[emoji]) msg.reactions[emoji] = [];
+    if (!msg.reactions[emoji].includes(userId)) {
+      msg.reactions[emoji].push(userId);
+      saveData();
     }
+  }
 }
-
-function persist() {
-    const tempPath = DB_PATH + ".tmp";
-    fs.writeFileSync(tempPath, JSON.stringify(db, null, 2));
-    fs.renameSync(tempPath, DB_PATH);
+function removeReaction(messageId, userId, emoji) {
+  const msg = getMessageById(messageId);
+  if (msg && msg.reactions[emoji]) {
+    msg.reactions[emoji] = msg.reactions[emoji].filter(id => id !== userId);
+    if (msg.reactions[emoji].length === 0) delete msg.reactions[emoji];
+    saveData();
+  }
 }
-
-init();
-
-/* ==========================================================
-   USER SECTION
-========================================================== */
-
-async function createUser(user) {
-    db.users.push(user);
-    db.devices[user.id] = [];
-    db.refreshTokens[user.id] = {};
-    persist();
-    return user;
+function pinMessage(chatId, messageId) {
+  const chat = getChatById(chatId);
+  if (chat && !chat.pinnedMessageIds.includes(messageId)) {
+    chat.pinnedMessageIds.push(messageId);
+    saveData();
+  }
 }
-
-async function findUserByEmail(email) {
-    return db.users.find(u => u.email === email);
+function unpinMessage(chatId, messageId) {
+  const chat = getChatById(chatId);
+  if (chat) {
+    chat.pinnedMessageIds = chat.pinnedMessageIds.filter(id => id !== messageId);
+    saveData();
+  }
 }
-
-async function findUserById(id) {
-    return db.users.find(u => u.id === id);
-}
-
-async function getAllUsers() {
-    return db.users;
-}
-
-/* ==========================================================
-   DEVICE SECTION
-========================================================== */
-
-async function attachDevice(userId, deviceId) {
-    if (!db.devices[userId])
-        db.devices[userId] = [];
-
-    if (!db.devices[userId].includes(deviceId))
-        db.devices[userId].push(deviceId);
-
-    persist();
-}
-
-async function removeDevice(userId, deviceId) {
-    if (!db.devices[userId]) return;
-
-    db.devices[userId] =
-        db.devices[userId].filter(d => d !== deviceId);
-
-    if (db.refreshTokens[userId])
-        delete db.refreshTokens[userId][deviceId];
-
-    persist();
-}
-
-async function removeAllDevices(userId) {
-    db.devices[userId] = [];
-    db.refreshTokens[userId] = {};
-    persist();
-}
-
-async function getUserDevices(userId) {
-    return db.devices[userId] || [];
-}
-
-/* ==========================================================
-   REFRESH TOKENS
-========================================================== */
-
-async function saveRefreshToken(userId, deviceId, token) {
-    if (!db.refreshTokens[userId])
-        db.refreshTokens[userId] = {};
-
-    db.refreshTokens[userId][deviceId] = token;
-    persist();
-}
-
-async function getRefreshToken(userId, deviceId) {
-    return db.refreshTokens[userId]
-        ? db.refreshTokens[userId][deviceId]
-        : null;
-}
-
-/* ==========================================================
-   CHAT SECTION
-========================================================== */
-
-async function createChat(chat) {
-    db.chats.push(chat);
-    db.messages[chat.id] = [];
-    persist();
-    return chat;
-}
-
-async function getChatById(chatId) {
-    return db.chats.find(c => c.id === chatId);
-}
-
-async function getUserChats(userId) {
-    return db.chats.filter(c =>
-        c.members.includes(userId)
-    );
-}
-
-async function deleteChat(chatId) {
-    db.chats = db.chats.filter(c => c.id !== chatId);
-    delete db.messages[chatId];
-    persist();
-}
-
-/* ==========================================================
-   MESSAGE SECTION
-========================================================== */
-
-async function addMessage(chatId, message) {
-    if (!db.messages[chatId])
-        db.messages[chatId] = [];
-
-    db.messages[chatId].push(message);
-    persist();
-    return message;
-}
-20:48
-async function getMessages(chatId, limit = 100) {
-    const msgs = db.messages[chatId] || [];
-    return msgs.slice(-limit);
-}
-
-async function deleteMessage(chatId, messageId) {
-    if (!db.messages[chatId]) return;
-
-    db.messages[chatId] =
-        db.messages[chatId].filter(m => m.id !== messageId);
-
-    persist();
-}
-
-async function editMessage(chatId, messageId, newText) {
-    const msgs = db.messages[chatId];
-    if (!msgs) return;
-
-    const msg = msgs.find(m => m.id === messageId);
-    if (msg) {
-        msg.text = newText;
-        msg.edited = true;
-        persist();
-    }
-}
-
-/* ==========================================================
-   FULL SYNC
-========================================================== */
-
-async function fullSync(userId) {
-    const chats = await getUserChats(userId);
-
-    return chats.map(chat => ({
-        ...chat,
-        messages: db.messages[chat.id] || []
-    }));
-}
-
-/* ==========================================================
-   AI LOGGING
-========================================================== */
-
-async function logAI(entry) {
-    db.aiLogs.push({
-        ...entry,
-        createdAt: Date.now()
-    });
-    persist();
-}
-
-async function getAILogs() {
-    return db.aiLogs;
-}
-
-/* ==========================================================
-   MODERATION
-========================================================== */
-
-async function logModeration(action) {
-    db.moderationLogs.push({
-        ...action,
-        createdAt: Date.now()
-    });
-    persist();
-}
-
-async function getModerationLogs() {
-    return db.moderationLogs;
-}
-
-/* ==========================================================
-   ADMIN
-========================================================== */
-
-async function setUserRole(userId, role) {
-    const user = await findUserById(userId);
-    if (!user) return;
-    user.role = role;
-    persist();
-}
-
-/* ==========================================================
-   EXPORT
-========================================================== */
 
 module.exports = {
-    createUser,
-    findUserByEmail,
-    findUserById,
-    getAllUsers,
-
-    attachDevice,
-    removeDevice,
-    removeAllDevices,
-    getUserDevices,
-
-    saveRefreshToken,
-    getRefreshToken,
-
-    createChat,
-    getChatById,
-    getUserChats,
-    deleteChat,
-
-    addMessage,
-    getMessages,
-    deleteMessage,
-    editMessage,
-
-    fullSync,
-
-    logAI,
-    getAILogs,
-
-    logModeration,
-    getModerationLogs,
-
-    setUserRole
+  users: data.users,
+  chats: data.chats,
+  messages: data.messages,
+  channels: data.channels,
+  bots: data.bots,
+  twoFactorSecrets: data.twoFactorSecrets,
+  findUserByUsername,
+  findUserById,
+  createUser,
+  getAllUsers,
+  updateUser,
+  setTwoFactorSecret,
+  getTwoFactorSecret,
+  enableTwoFactor,
+  disableTwoFactor,
+  createChat,
+  getChatsForUser,
+  getChatById,
+  muteChat,
+  unmuteChat,
+  archiveChat,
+  addParticipantToGroup,
+  removeParticipantFromGroup,
+  promoteToAdmin,
+  createChannel,
+  getChannelById,
+  subscribeToChannel,
+  unsubscribeFromChannel,
+  createChannelPost,
+  createBot,
+  getBotById,
+  getBotsByOwner,
+  createMessage,
+  getMessagesForChat,
+  getMessageById,
+  updateMessage,
+  deleteMessage,
+  addReaction,
+  removeReaction,
+  pinMessage,
+  unpinMessage
 };
