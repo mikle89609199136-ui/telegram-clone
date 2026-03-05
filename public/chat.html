@@ -4,13 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
   <title>Craheapp Messenger</title>
+  <!-- Font Awesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <!-- Emoji Picker -->
+  <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.21.1/index.js" type="module"></script>
+  <!-- Socket.IO -->
+  <script src="/socket.io/socket.io.js"></script>
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
     }
     body {
       background: #0f0f18;
@@ -20,92 +25,124 @@
       justify-content: center;
       overflow: hidden;
     }
-    .app {
+    #app {
       width: 100%;
       height: 100%;
-      max-width: 1400px;
-      max-height: 900px;
+      max-width: 1600px;
+      max-height: 1000px;
       display: flex;
-      background: rgba(26,26,46,0.8);
-      backdrop-filter: blur(20px);
-      border-radius: 32px;
-      box-shadow: 0 25px 50px -12px #000;
+      background: #1a1a2e;
+      border-radius: 24px;
       overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
       border: 1px solid #2f2f50;
     }
-    /* Sidebar */
+    /* Sidebar (left panel) */
     .sidebar {
       width: 320px;
       background: #1a1a2e;
       border-right: 1px solid #2f2f50;
       display: flex;
       flex-direction: column;
+      transition: width 0.2s;
     }
     .sidebar-header {
-      padding: 20px;
+      padding: 20px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid #2f2f50;
     }
     .logo {
-      font-size: 20px;
-      font-weight: 600;
+      font-size: 22px;
+      font-weight: 700;
       background: linear-gradient(135deg, #7a5cff, #ff5ad6);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
-    .new-chat-btn {
-      width: 48px;
-      height: 48px;
+    .sidebar-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .sidebar-actions button {
+      width: 40px;
+      height: 40px;
       border-radius: 12px;
-      background: #7a5cff;
-      border: none;
-      color: white;
-      font-size: 24px;
+      background: transparent;
+      border: 1px solid #2f2f50;
+      color: #b0b0d0;
+      font-size: 20px;
       cursor: pointer;
       transition: 0.2s;
     }
-    .new-chat-btn:hover { background: #8b6eff; }
+    .sidebar-actions button:hover {
+      background: #2f2f50;
+      color: white;
+    }
+    .sidebar-tabs {
+      display: flex;
+      padding: 12px 16px;
+      gap: 10px;
+      border-bottom: 1px solid #2f2f50;
+    }
+    .tab-btn {
+      flex: 1;
+      height: 40px;
+      background: transparent;
+      border: none;
+      border-radius: 10px;
+      color: #b0b0d0;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .tab-btn.active {
+      background: #7a5cff;
+      color: white;
+    }
     .search-box {
-      padding: 15px 20px;
+      padding: 12px 16px;
       position: relative;
     }
     .search-box i {
       position: absolute;
-      left: 35px;
-      top: 27px;
+      left: 28px;
+      top: 24px;
       color: #b0b0d0;
+      font-size: 16px;
     }
     .search-box input {
-      width: 280px;
-      height: 40px;
-      padding: 12px 20px 12px 45px;
-      background: #1a1a2e;
+      width: 100%;
+      height: 44px;
+      padding: 0 16px 0 42px;
+      background: #0f0f18;
       border: 1px solid #2f2f50;
-      border-radius: 10px;
+      border-radius: 12px;
       color: white;
-      font-size: 14px;
+      font-size: 15px;
       outline: none;
     }
     .search-box input::placeholder { color: #b0b0d0; }
     .chat-list {
       flex: 1;
       overflow-y: auto;
-      padding: 0 10px;
+      padding: 8px 12px;
     }
     .chat-item {
       display: flex;
       align-items: center;
       height: 72px;
-      padding: 12px;
+      padding: 8px 12px;
       border-radius: 16px;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
       cursor: pointer;
-      transition: 0.2s;
+      transition: 0.15s;
       position: relative;
     }
-    .chat-item:hover, .chat-item.active { background: #24243f; }
+    .chat-item:hover, .chat-item.active {
+      background: #2a2a44;
+    }
     .chat-avatar {
       width: 48px;
       height: 48px;
@@ -119,390 +156,429 @@
       font-size: 20px;
       margin-right: 12px;
       overflow: hidden;
+      flex-shrink: 0;
     }
     .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .chat-info { flex: 1; }
-    .chat-name { color: white; font-weight: 500; margin-bottom: 4px; }
-    .chat-last-msg { color: #b0b0d0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
-    .chat-time { color: #b0b0d0; font-size: 11px; position: absolute; top: 12px; right: 12px; }
-
+    .chat-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .chat-name {
+      color: white;
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-last-msg {
+      color: #b0b0d0;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-time {
+      color: #b0b0d0;
+      font-size: 11px;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+    }
+    .chat-badge {
+      background: #ff5ad6;
+      color: white;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+    }
     /* Main chat area */
     .chat-area {
       flex: 1;
       display: flex;
       flex-direction: column;
-      background: rgba(15,15,24,0.6);
+      background: #141425;
     }
     .chat-header {
-      height: 64px;
-      padding: 0 25px;
+      height: 70px;
+      padding: 0 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       border-bottom: 1px solid #2f2f50;
     }
-    .header-left { display: flex; align-items: center; }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
     .header-avatar {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
       background: linear-gradient(135deg, #7a5cff, #ff5ad6);
-      margin-right: 15px;
       overflow: hidden;
     }
     .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .header-info h3 { color: white; font-size: 16px; font-weight: 600; }
-    .header-info p { color: #b0b0d0; font-size: 12px; }
-    .header-actions { display: flex; gap: 15px; }
-    .header-actions button {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      background: transparent;
-      border: none;
+    .header-info h3 {
       color: white;
       font-size: 18px;
-      cursor: pointer;
-      transition: 0.2s;
+      font-weight: 600;
     }
-    .header-actions button:hover { background: #2f2f50; }
-
-    /* Messages container */
-    .messages-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
+    .header-info p {
+      color: #b0b0d0;
+      font-size: 13px;
+    }
+    .header-actions {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .message {
-      max-width: 520px;
-      display: flex;
-      margin-bottom: 5px;
-      animation: fadeIn 0.16s ease;
-    }
-    .message.sent { align-self: flex-end; }
-    .message.received { align-self: flex-start; }
-    .message-bubble {
-      padding: 10px 14px;
-      border-radius: 16px;
-      position: relative;
-      word-wrap: break-word;
-    }
-    .message.sent .message-bubble { background: #7a5cff; color: white; border-bottom-right-radius: 4px; }
-    .message.received .message-bubble { background: #2b2b45; color: white; border-bottom-left-radius: 4px; }
-    .message-time { font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 4px; text-align: right; }
-    .reply-context { font-size: 12px; padding: 4px 8px; background: rgba(0,0,0,0.3); border-radius: 8px; margin-bottom: 4px; color: #b0b0d0; cursor: pointer; }
-    .message-reactions { display: flex; gap: 5px; margin-top: 5px; }
-    .reaction { background: rgba(255,255,255,0.1); border-radius: 12px; padding: 2px 8px; font-size: 12px; display: flex; align-items: center; gap: 4px; cursor: pointer; transition: 0.12s; }
-    .reaction:hover { transform: scale(1.1); }
-    .message-media { max-width: 250px; border-radius: 12px; cursor: pointer; }
-
-    /* Composer */
-    .composer {
-      height: 72px;
-      padding: 12px 25px;
-      display: flex;
-      align-items: center;
       gap: 12px;
-      border-top: 1px solid #2f2f50;
     }
-    .composer-actions { display: flex; gap: 10px; }
-    .composer-actions button {
+    .header-actions button {
       width: 44px;
       height: 44px;
       border-radius: 12px;
       background: transparent;
       border: 1px solid #2f2f50;
-      color: #b0b0d0;
+      color: white;
       font-size: 20px;
       cursor: pointer;
-      transition: 0.2s;
+      transition: 0.15s;
     }
-    .composer-actions button:hover { background: #2f2f50; color: white; }
+    .header-actions button:hover {
+      background: #7a5cff;
+      border-color: #7a5cff;
+    }
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .message {
+      max-width: 600px;
+      display: flex;
+      margin-bottom: 4px;
+      animation: fadeIn 0.2s ease;
+    }
+    .message.sent { align-self: flex-end; }
+    .message.received { align-self: flex-start; }
+    .message-bubble {
+      padding: 10px 16px;
+      border-radius: 18px;
+      position: relative;
+      word-wrap: break-word;
+    }
+    .message.sent .message-bubble {
+      background: #7a5cff;
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .message.received .message-bubble {
+      background: #25253f;
+      color: white;
+      border-bottom-left-radius: 4px;
+    }
+    .message-time {
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      margin-top: 4px;
+      text-align: right;
+    }
+    .message-reply {
+      font-size: 13px;
+      padding: 4px 8px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      border-left: 3px solid #ff5ad6;
+    }
+    .message-media {
+      max-width: 300px;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .message-reactions {
+      display: flex;
+      gap: 5px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+    .reaction {
+      background: rgba(255,255,255,0.15);
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transition: 0.1s;
+    }
+    .reaction:hover {
+      background: #7a5cff;
+      transform: scale(1.05);
+    }
+    /* Composer */
+    .composer {
+      padding: 16px 24px;
+      border-top: 1px solid #2f2f50;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .composer-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .composer-actions button {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: transparent;
+      border: 1px solid #2f2f50;
+      color: #b0b0d0;
+      font-size: 22px;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .composer-actions button:hover {
+      background: #2f2f50;
+      color: white;
+    }
     .composer-input {
       flex: 1;
       display: flex;
       align-items: center;
-      background: #1a1a2e;
+      background: #1f1f33;
       border-radius: 24px;
-      padding: 0 15px;
+      padding: 0 16px;
       border: 1px solid #2f2f50;
     }
     .composer-input input {
       flex: 1;
       background: none;
       border: none;
-      padding: 12px 0;
+      padding: 14px 0;
       color: white;
-      font-size: 15px;
+      font-size: 16px;
       outline: none;
     }
     .composer-input input::placeholder { color: #b0b0d0; }
-    .composer-input button { background: none; border: none; color: #b0b0d0; font-size: 22px; cursor: pointer; }
+    .composer-input button {
+      background: none;
+      border: none;
+      color: #b0b0d0;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0 4px;
+    }
     .send-btn {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
+      width: 52px;
+      height: 52px;
+      border-radius: 18px;
       background: #7a5cff;
       border: none;
       color: white;
-      font-size: 20px;
+      font-size: 22px;
       cursor: pointer;
-      transition: 0.12s;
+      transition: 0.15s;
     }
-    .send-btn:hover { background: #8b6eff; transform: scale(1.03); }
+    .send-btn:hover {
+      background: #8b6eff;
+      transform: scale(1.03);
+    }
     .send-btn:active { transform: scale(0.97); }
+    .send-btn:disabled {
+      opacity: 0.4;
+      pointer-events: none;
+    }
 
-    /* Right AI Panel */
-    .ai-panel {
-      width: 360px;
-      background: #141428;
+    /* Right panel (AI / Info) */
+    .right-panel {
+      width: 340px;
+      background: #1a1a2e;
       border-left: 1px solid #2f2f50;
-      padding: 20px;
+      display: flex;
+      flex-direction: column;
       overflow-y: auto;
-      display: none;
     }
-    .ai-panel.visible { display: block; }
-    .ai-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-    .ai-avatar {
-      width: 48px; height: 48px; border-radius: 24px; background: linear-gradient(135deg,#7a5cff,#ff5ad6);
-      display: flex; align-items: center; justify-content: center; color: white; font-size: 24px;
+    .right-panel.hidden { display: none; }
+    .panel-header {
+      padding: 20px;
+      border-bottom: 1px solid #2f2f50;
     }
-    .ai-title { color: white; font-size: 18px; font-weight: 600; }
-    .ai-subtitle { color: #b0b0d0; font-size: 12px; }
+    .panel-header h3 {
+      color: white;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel-content {
+      padding: 20px;
+      flex: 1;
+    }
+    .ai-message {
+      background: #25253f;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
     .ai-button {
-      width: 100%; padding: 12px; background: #1f1f33; border: 1px solid #2f2f50; border-radius: 12px; color: white; font-size: 14px; cursor: pointer; margin-bottom: 10px; transition: 0.12s;
+      width: 100%;
+      padding: 12px;
+      background: #25253f;
+      border: 1px solid #2f2f50;
+      border-radius: 14px;
+      color: white;
+      font-size: 15px;
+      cursor: pointer;
+      margin-bottom: 10px;
+      transition: 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    .ai-button:hover { background: #2a2a44; transform: scale(1.02); }
+    .ai-button:hover {
+      background: #7a5cff;
+    }
 
-    /* Auth modal */
-    .auth-overlay {
-      position: fixed; top:0; left:0; right:0; bottom:0; background: #0f0f18; display: flex; justify-content: center; align-items: center; z-index: 1000;
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
     }
-    .auth-card {
-      background: #1a1a2e; padding: 40px; border-radius: 24px; width: 420px; border: 1px solid #2f2f50;
+    .modal-card {
+      background: #1f1f33;
+      border-radius: 28px;
+      width: 460px;
+      max-width: 90%;
+      padding: 30px;
+      border: 1px solid #2f2f50;
+      color: white;
     }
-    .auth-card h2 { color: white; margin-bottom: 20px; text-align: center; }
-    .auth-card input {
-      width: 100%; height: 44px; padding: 12px; margin-bottom: 15px; background: #0f0f18; border: 1px solid #2f2f50; border-radius: 12px; color: white;
+    .modal-card h2 {
+      margin-bottom: 24px;
+      font-size: 24px;
     }
-    .auth-card button {
-      width: 100%; height: 48px; background: #7a5cff; border: none; border-radius: 12px; color: white; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+    .modal-card input, .modal-card textarea {
+      width: 100%;
+      padding: 14px 16px;
+      background: #0f0f18;
+      border: 1px solid #2f2f50;
+      border-radius: 16px;
+      color: white;
+      font-size: 16px;
+      margin-bottom: 16px;
     }
-    .auth-card button.register { background: #ff5ad6; }
+    .modal-card button {
+      width: 100%;
+      padding: 16px;
+      background: #7a5cff;
+      border: none;
+      border-radius: 18px;
+      color: white;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+    .modal-card .secondary-btn {
+      background: transparent;
+      border: 1px solid #2f2f50;
+      color: #b0b0d0;
+    }
 
-    /* Responsive */
-    @media (max-width: 768px) {
-      .sidebar { width: 100%; position: absolute; left: -100%; transition: left 0.3s; z-index: 100; }
-      .sidebar.open { left: 0; }
-      .app { border-radius: 0; }
-      .ai-panel { width: 100%; position: absolute; right: -100%; transition: right 0.3s; }
-      .ai-panel.open { right: 0; }
-      .chat-area { width: 100%; }
+    /* Empty state */
+    .empty-chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #b0b0d0;
+      gap: 20px;
+    }
+    .empty-chat i {
+      font-size: 80px;
+      color: #7a5cff;
+    }
+    .empty-chat h2 {
+      color: white;
+      font-size: 28px;
+    }
+    .empty-chat p {
+      font-size: 16px;
+    }
+    .empty-chat button {
+      background: #7a5cff;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 40px;
+      color: white;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
     }
 
     @keyframes fadeIn {
-      from { opacity:0; transform: translateY(10px); }
-      to { opacity:1; transform: translateY(0); }
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    ::-webkit-scrollbar { width:6px; }
-    ::-webkit-scrollbar-track { background:transparent; }
-    ::-webkit-scrollbar-thumb { background:#7a5cff; border-radius:10px; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #7a5cff; border-radius: 10px; }
+
+    /* Responsive */
+    @media (max-width: 1000px) {
+      .right-panel { width: 280px; }
+    }
+    @media (max-width: 768px) {
+      #app { border-radius: 0; max-width: 100%; max-height: 100%; }
+      .sidebar { width: 280px; }
+      .right-panel { display: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="app" id="app">
-    <!-- Sidebar -->
-    <div class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <span class="logo">Craheapp</span>
-        <button class="new-chat-btn" id="newChatBtn"><i class="fas fa-plus"></i></button>
-      </div>
-      <div class="search-box">
-        <i class="fas fa-search"></i>
-        <input type="text" placeholder="Search chats..." id="searchInput">
-      </div>
-      <div class="chat-list" id="chatList"></div>
-    </div>
+  <div id="app"></div>
 
-    <!-- Main chat area -->
-    <div class="chat-area">
-      <div class="chat-header">
-        <div class="header-left">
-          <button class="menu-toggle" id="menuToggle" style="background:none; border:none; color:white; font-size:24px; margin-right:10px; display:none;"><i class="fas fa-bars"></i></button>
-          <div class="header-avatar" id="headerAvatar"><img src="" alt=""></div>
-          <div class="header-info">
-            <h3 id="headerName">Select a chat</h3>
-            <p id="headerStatus"></p>
-          </div>
-        </div>
-        <div class="header-actions">
-          <button id="callBtn"><i class="fas fa-phone"></i></button>
-          <button id="videoCallBtn"><i class="fas fa-video"></i></button>
-          <button id="aiAssistantBtn"><i class="fas fa-robot"></i></button>
-          <button id="profileMenuBtn"><i class="fas fa-user-circle"></i></button>
-        </div>
-      </div>
-
-      <div class="messages-container" id="messagesContainer"></div>
-
-      <div class="composer">
-        <div class="composer-actions">
-          <button id="emojiBtn"><i class="fas fa-smile"></i></button>
-          <button id="attachBtn"><i class="fas fa-paperclip"></i></button>
-          <button id="voiceBtn"><i class="fas fa-microphone"></i></button>
-        </div>
-        <div class="composer-input">
-          <input type="text" id="messageInput" placeholder="Message..." disabled>
-          <button id="sendBtn" disabled><i class="fas fa-paper-plane"></i></button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right AI Panel -->
-    <div class="ai-panel" id="aiPanel">
-      <div class="ai-header">
-        <div class="ai-avatar"><i class="fas fa-robot"></i></div>
-        <div>
-          <div class="ai-title">CRAHEAPP.BOT</div>
-          <div class="ai-subtitle">Always online</div>
-        </div>
-      </div>
-      <button class="ai-button" id="aiSummarize"><i class="fas fa-align-left"></i> Summarize chat</button>
-      <button class="ai-button" id="aiTranslate"><i class="fas fa-language"></i> Translate message</button>
-      <button class="ai-button" id="aiSmartReply"><i class="fas fa-comment-dots"></i> Smart reply</button>
-      <button class="ai-button" id="aiGenerate"><i class="fas fa-magic"></i> Generate text</button>
-    </div>
-  </div>
-
-  <!-- Auth modal -->
-  <div class="auth-overlay" id="authOverlay">
-    <div class="auth-card">
-      <h2 id="authTitle">Login</h2>
-      <input type="text" id="authUsername" placeholder="Username">
-      <input type="password" id="authPassword" placeholder="Password">
-      <button id="authActionBtn">Login</button>
-      <button class="register" id="authToggleBtn">Register</button>
-    </div>
-  </div>
-
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    // ==================== Global state ====================
+  <script type="module">
+    // ---------- Configuration ----------
+    const API_BASE = '';
     let token = localStorage.getItem('token');
     let currentUser = null;
-    let currentChat = null;
-    let chats = [];
-    let messages = [];
+    let currentChat = null; // { id, type, name, participants, ... }
+    let chats = []; // array of chat objects from server
+    let messagesByChat = {}; // local cache: { chatId: [messages] }
+    let contacts = []; // will be loaded from /api/users
     let socket = null;
+    let emojiPicker = null;
 
-    // DOM elements
-    const authOverlay = document.getElementById('authOverlay');
-    const authTitle = document.getElementById('authTitle');
-    const authUsername = document.getElementById('authUsername');
-    const authPassword = document.getElementById('authPassword');
-    const authActionBtn = document.getElementById('authActionBtn');
-    const authToggleBtn = document.getElementById('authToggleBtn');
-    const chatList = document.getElementById('chatList');
-    const messagesContainer = document.getElementById('messagesContainer');
-    const messageInput = document.getElementById('messageInput');
-    const sendBtn = document.getElementById('sendBtn');
-    const emojiBtn = document.getElementById('emojiBtn');
-    const attachBtn = document.getElementById('attachBtn');
-    const voiceBtn = document.getElementById('voiceBtn');
-    const newChatBtn = document.getElementById('newChatBtn');
-    const callBtn = document.getElementById('callBtn');
-    const videoCallBtn = document.getElementById('videoCallBtn');
-    const aiAssistantBtn = document.getElementById('aiAssistantBtn');
-    const profileMenuBtn = document.getElementById('profileMenuBtn');
-    const headerName = document.getElementById('headerName');
-    const headerStatus = document.getElementById('headerStatus');
-    const headerAvatarImg = document.querySelector('#headerAvatar img');
-    const aiPanel = document.getElementById('aiPanel');
-    const aiSummarize = document.getElementById('aiSummarize');
-    const aiTranslate = document.getElementById('aiTranslate');
-    const aiSmartReply = document.getElementById('aiSmartReply');
-    const aiGenerate = document.getElementById('aiGenerate');
-    const menuToggle = document.getElementById('menuToggle');
-    const sidebar = document.getElementById('sidebar');
+    // Special bot ID (local)
+    const BOT_ID = 'craheapp-bot';
+    const BOT_NAME = 'CRAHEAPP.BOT';
+    const BOT_AVATAR = '🤖';
 
-    // Responsive: show menu toggle on mobile
-    if (window.innerWidth <= 768) {
-      menuToggle.style.display = 'block';
-    }
+    // First time flag
+    const FIRST_TIME_KEY = 'craheapp_first_time';
 
-    menuToggle?.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-    });
-
-    // ==================== Auth ====================
-    let isLogin = true;
-    authToggleBtn.addEventListener('click', () => {
-      isLogin = !isLogin;
-      authTitle.textContent = isLogin ? 'Login' : 'Register';
-      authActionBtn.textContent = isLogin ? 'Login' : 'Register';
-    });
-
-    authActionBtn.addEventListener('click', async () => {
-      const username = authUsername.value.trim();
-      const password = authPassword.value.trim();
-      if (!username || !password) return alert('Fill all fields');
-      const url = isLogin ? '/api/login' : '/api/register';
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        token = data.token;
-        currentUser = data.user;
-        localStorage.setItem('token', token);
-        authOverlay.style.display = 'none';
-        initSocket();
-        loadChats();
-        messageInput.disabled = false;
-        sendBtn.disabled = false;
-      } catch (err) {
-        alert(err.message);
-      }
-    });
-
-    if (token) {
-      authOverlay.style.display = 'none';
-      initSocket();
-      loadChats();
-      messageInput.disabled = false;
-      sendBtn.disabled = false;
-    } else {
-      authOverlay.style.display = 'flex';
-    }
-
-    // ==================== Socket.IO ====================
-    function initSocket() {
-      socket = io({ auth: { token } });
-      socket.on('message:new', (msg) => {
-        if (msg.chatId === currentChat?.id) {
-          messages.push(msg);
-          renderMessages();
-        }
-        updateChatLastMessage(msg);
-      });
-      socket.on('message:edit', (msg) => {
-        // handle edit
-      });
-      socket.on('message:delete', (msgId) => {
-        // handle delete
-      });
-      socket.on('typing', ({ username, isTyping }) => {
-        if (currentChat) headerStatus.textContent = isTyping ? `${username} typing...` : 'online';
-      });
-    }
-
-    // ==================== API ====================
+    // ---------- Helper functions ----------
     async function fetchWithAuth(url, options = {}) {
       options.headers = {
         ...options.headers,
@@ -512,57 +588,330 @@
       const res = await fetch(url, options);
       if (res.status === 401) {
         localStorage.removeItem('token');
-        authOverlay.style.display = 'flex';
+        showAuthModal();
         throw new Error('Unauthorized');
       }
       return res;
     }
 
+    // ---------- Auth Modal ----------
+    function showAuthModal() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.id = 'authModal';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h2 id="authTitle">Login</h2>
+          <input type="text" id="authUsername" placeholder="Username" autocomplete="off">
+          <input type="password" id="authPassword" placeholder="Password">
+          <button id="authActionBtn">Login</button>
+          <button class="secondary-btn" id="authToggleBtn">Create account</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      let isLogin = true;
+      const title = document.getElementById('authTitle');
+      const username = document.getElementById('authUsername');
+      const password = document.getElementById('authPassword');
+      const actionBtn = document.getElementById('authActionBtn');
+      const toggleBtn = document.getElementById('authToggleBtn');
+
+      toggleBtn.addEventListener('click', () => {
+        isLogin = !isLogin;
+        title.textContent = isLogin ? 'Login' : 'Register';
+        actionBtn.textContent = isLogin ? 'Login' : 'Register';
+        toggleBtn.textContent = isLogin ? 'Create account' : 'Back to login';
+      });
+
+      actionBtn.addEventListener('click', async () => {
+        const uname = username.value.trim();
+        const pwd = password.value.trim();
+        if (!uname || !pwd) return alert('Fill all fields');
+        const url = isLogin ? '/api/login' : '/api/register';
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: uname, password: pwd })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+          token = data.token;
+          currentUser = data.user;
+          localStorage.setItem('token', token);
+          modal.remove();
+          initApp();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    }
+
+    // ---------- Initialize App ----------
+    function initApp() {
+      if (!token) {
+        showAuthModal();
+        return;
+      }
+      // Load current user from token? We have currentUser from login, but if page refreshed, we need to fetch /api/users/me or similar.
+      // For simplicity, we'll store user in localStorage after login. But here we don't have /api/users/me endpoint. We'll use token info.
+      // Actually we have currentUser from login response, but if page reloads we need to get user again.
+      // We'll just assume token is valid and fetch /api/chats to get user info? Not ideal.
+      // Let's add a /api/auth/me endpoint? Not present. We'll store user in localStorage after login.
+      // When page loads, we have token but no currentUser. We'll fetch /api/chats and if success, we can assume user is valid.
+      // But we need user id for creating chats. So we'll decode token? Not safe.
+      // Instead, after login we stored currentUser in localStorage.
+      const storedUser = localStorage.getItem('currentUser');
+      if (storedUser) {
+        currentUser = JSON.parse(storedUser);
+      } else {
+        // If no stored user, show auth
+        showAuthModal();
+        return;
+      }
+
+      // Connect socket
+      socket = io({ auth: { token } });
+      socket.on('message:new', (msg) => {
+        if (msg.chatId === currentChat?.id) {
+          if (!messagesByChat[msg.chatId]) messagesByChat[msg.chatId] = [];
+          messagesByChat[msg.chatId].push(msg);
+          renderMessages();
+        }
+        updateChatLastMessage(msg);
+      });
+      socket.on('typing', ({ username, isTyping }) => {
+        if (currentChat) document.getElementById('headerStatus').textContent = isTyping ? `${username} typing...` : 'online';
+      });
+
+      // Load initial data
+      loadChats();
+      loadContacts();
+      checkFirstTime();
+
+      // Render main UI
+      renderApp();
+    }
+
     async function loadChats() {
       try {
         const res = await fetchWithAuth('/api/chats');
-        chats = await res.json();
+        const serverChats = await res.json();
+        chats = serverChats; // these are from server (groups, direct)
+        // Add local bot chat if not exists
+        if (!chats.find(c => c.id === BOT_ID)) {
+          chats.unshift({
+            id: BOT_ID,
+            type: 'direct',
+            name: BOT_NAME,
+            participants: [currentUser.id, BOT_ID],
+            avatar: BOT_AVATAR,
+            lastMessage: null
+          });
+        }
         renderChatList();
-      } catch (err) { console.error(err); }
+      } catch (err) {
+        console.error(err);
+      }
     }
 
-    async function loadMessages(chatId) {
+    async function loadContacts() {
       try {
-        const res = await fetchWithAuth(`/api/messages/${chatId}`);
-        messages = await res.json();
-        renderMessages();
-      } catch (err) { console.error(err); }
+        const res = await fetchWithAuth('/api/users');
+        contacts = await res.json();
+      } catch (err) {
+        console.error(err);
+      }
     }
 
-    async function sendMessage(content, type = 'text', mediaUrl = null, replyTo = null) {
-      if (!currentChat) return;
-      const payload = { chatId: currentChat.id, content, type, mediaUrl, replyTo };
-      try {
-        const res = await fetchWithAuth('/api/messages', { method: 'POST', body: JSON.stringify(payload) });
-        const newMsg = await res.json();
-        messages.push(newMsg);
-        renderMessages();
-        // Already broadcast via socket, but we optimistically added
-      } catch (err) { console.error(err); }
+    function checkFirstTime() {
+      if (!localStorage.getItem(FIRST_TIME_KEY)) {
+        localStorage.setItem(FIRST_TIME_KEY, 'true');
+        // Create bot chat with welcome message
+        const welcomeMsg = {
+          id: 'welcome-' + Date.now(),
+          chatId: BOT_ID,
+          senderId: BOT_ID,
+          content: '👋 Привет! Я CRAHEAPP.BOT — твой AI помощник.\nЯ могу:\n• отвечать на вопросы\n• помогать с чатами\n• переводить текст\n• создавать идеи\n• помогать управлять группами',
+          type: 'text',
+          createdAt: new Date().toISOString(),
+          reactions: {}
+        };
+        if (!messagesByChat[BOT_ID]) messagesByChat[BOT_ID] = [];
+        messagesByChat[BOT_ID].push(welcomeMsg);
+        // Also update chat last message
+        const botChat = chats.find(c => c.id === BOT_ID);
+        if (botChat) botChat.lastMessage = welcomeMsg;
+      }
     }
 
-    // ==================== UI ====================
+    // ---------- UI Rendering ----------
+    function renderApp() {
+      const app = document.getElementById('app');
+      app.innerHTML = `
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+          <div class="sidebar-header">
+            <span class="logo">Craheapp</span>
+            <div class="sidebar-actions">
+              <button id="newChatBtn"><i class="fas fa-plus"></i></button>
+              <button id="settingsBtn"><i class="fas fa-cog"></i></button>
+            </div>
+          </div>
+          <div class="sidebar-tabs">
+            <button class="tab-btn active" data-tab="chats"><i class="fas fa-comment"></i> Chats</button>
+            <button class="tab-btn" data-tab="contacts"><i class="fas fa-address-book"></i> Contacts</button>
+            <button class="tab-btn" data-tab="calls"><i class="fas fa-phone"></i> Calls</button>
+          </div>
+          <div class="search-box">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchInput" placeholder="Search...">
+          </div>
+          <div class="chat-list" id="chatList"></div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="chat-area">
+          <div class="chat-header">
+            <div class="header-left">
+              <div class="header-avatar" id="headerAvatar"><img src="" alt=""></div>
+              <div class="header-info">
+                <h3 id="headerName">Select a chat</h3>
+                <p id="headerStatus"></p>
+              </div>
+            </div>
+            <div class="header-actions">
+              <button id="callBtn" title="Voice call"><i class="fas fa-phone"></i></button>
+              <button id="videoCallBtn" title="Video call"><i class="fas fa-video"></i></button>
+              <button id="aiToggleBtn" title="AI Assistant"><i class="fas fa-robot"></i></button>
+              <button id="profileBtn" title="Profile"><i class="fas fa-user-circle"></i></button>
+            </div>
+          </div>
+
+          <div id="messagesContainer" class="messages-container"></div>
+
+          <div class="composer">
+            <div class="composer-actions">
+              <button id="emojiBtn"><i class="fas fa-smile"></i></button>
+              <button id="attachBtn"><i class="fas fa-paperclip"></i></button>
+              <button id="voiceBtn"><i class="fas fa-microphone"></i></button>
+            </div>
+            <div class="composer-input">
+              <input type="text" id="messageInput" placeholder="Message..." autocomplete="off">
+              <button id="sendBtn" class="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel (AI / Info) -->
+        <div class="right-panel hidden" id="rightPanel">
+          <div class="panel-header">
+            <h3><i class="fas fa-robot" style="color: #ff5ad6;"></i> CRAHEAPP.BOT</h3>
+          </div>
+          <div class="panel-content">
+            <div class="ai-message">
+              Ask me anything, translate, summarize, or generate text.
+            </div>
+            <button class="ai-button" id="aiSummarize"><i class="fas fa-align-left"></i> Summarize chat</button>
+            <button class="ai-button" id="aiTranslate"><i class="fas fa-language"></i> Translate message</button>
+            <button class="ai-button" id="aiSmartReply"><i class="fas fa-comment-dots"></i> Smart reply</button>
+            <button class="ai-button" id="aiGenerate"><i class="fas fa-magic"></i> Generate text</button>
+          </div>
+        </div>
+      `;
+
+      // Attach event listeners
+      document.getElementById('newChatBtn').addEventListener('click', showNewChatModal);
+      document.getElementById('settingsBtn').addEventListener('click', showSettingsModal);
+      document.getElementById('callBtn').addEventListener('click', () => alert('Voice call - mock'));
+      document.getElementById('videoCallBtn').addEventListener('click', () => alert('Video call - mock'));
+      document.getElementById('aiToggleBtn').addEventListener('click', toggleRightPanel);
+      document.getElementById('profileBtn').addEventListener('click', showProfileModal);
+      document.getElementById('emojiBtn').addEventListener('click', showEmojiPicker);
+      document.getElementById('attachBtn').addEventListener('click', attachFile);
+      document.getElementById('voiceBtn').addEventListener('click', () => alert('Voice message - mock'));
+      document.getElementById('sendBtn').addEventListener('click', sendMessage);
+      document.getElementById('messageInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+        if (currentChat) {
+          socket.emit('typing', { chatId: currentChat.id, isTyping: true });
+          clearTimeout(window.typingTimeout);
+          window.typingTimeout = setTimeout(() => {
+            socket.emit('typing', { chatId: currentChat.id, isTyping: false });
+          }, 2000);
+        }
+      });
+      document.getElementById('messageInput').addEventListener('input', () => {
+        const sendBtn = document.getElementById('sendBtn');
+        if (currentChat && document.getElementById('messageInput').value.trim()) {
+          sendBtn.disabled = false;
+        } else {
+          sendBtn.disabled = true;
+        }
+      });
+
+      // Tab switching
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          e.target.classList.add('active');
+          // load appropriate list (chats/contacts/calls)
+          if (e.target.dataset.tab === 'chats') renderChatList();
+          else if (e.target.dataset.tab === 'contacts') renderContactsList();
+          else if (e.target.dataset.tab === 'calls') renderCallsList();
+        });
+      });
+
+      // AI panel buttons
+      document.getElementById('aiSummarize').addEventListener('click', async () => {
+        if (!currentChat) return;
+        const res = await fetchWithAuth('/api/ai/summarize', { method: 'POST', body: JSON.stringify({ messages: messagesByChat[currentChat.id] || [] }) });
+        const data = await res.json();
+        alert(data.summary);
+      });
+      document.getElementById('aiTranslate').addEventListener('click', async () => {
+        const lang = prompt('Target language (e.g., en, ru):');
+        const text = prompt('Text to translate:');
+        if (!lang || !text) return;
+        const res = await fetchWithAuth('/api/ai/translate', { method: 'POST', body: JSON.stringify({ text, targetLanguage: lang }) });
+        const data = await res.json();
+        alert(data.translated);
+      });
+      document.getElementById('aiSmartReply').addEventListener('click', async () => {
+        if (!currentChat) return;
+        const res = await fetchWithAuth('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message: 'Generate reply', chatId: currentChat.id }) });
+        const data = await res.json();
+        document.getElementById('messageInput').value = data.reply;
+        document.getElementById('sendBtn').disabled = false;
+      });
+      document.getElementById('aiGenerate').addEventListener('click', async () => {
+        const prompt = prompt('Enter a prompt:');
+        if (!prompt) return;
+        const res = await fetchWithAuth('/api/ai/generate', { method: 'POST', body: JSON.stringify({ prompt }) });
+        const data = await res.json();
+        alert(data.generated);
+      });
+
+      // Initial lists
+      renderChatList();
+    }
+
     function renderChatList() {
-      chatList.innerHTML = '';
+      const listEl = document.getElementById('chatList');
+      listEl.innerHTML = '';
       chats.forEach(chat => {
         const chatName = chat.type === 'direct'
-          ? (chat.participants.find(p => p !== currentUser?.id)?.username || 'User')
+          ? (chat.name || (chat.participants?.find(p => p !== currentUser?.id) ? 'User' : 'Unknown'))
           : chat.name;
-        const lastMsg = chat.lastMessage?.content || 'No messages yet';
+        const lastMsg = chat.lastMessage?.content || 'No messages';
         const time = chat.lastMessage ? new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-        const avatar = chat.type === 'direct'
-          ? `https://ui-avatars.com/api/?name=${chatName}&background=7a5cff&color=fff`
-          : 'https://ui-avatars.com/api/?name=Group&background=ff5ad6&color=fff';
+        const avatar = chat.id === BOT_ID ? BOT_AVATAR : (chat.avatar || `https://ui-avatars.com/api/?name=${chatName}&background=7a5cff&color=fff`);
         const item = document.createElement('div');
         item.className = `chat-item ${currentChat?.id === chat.id ? 'active' : ''}`;
         item.dataset.id = chat.id;
         item.innerHTML = `
-          <div class="chat-avatar"><img src="${avatar}" alt=""></div>
+          <div class="chat-avatar">${avatar.startsWith('http') ? `<img src="${avatar}">` : avatar}</div>
           <div class="chat-info">
             <div class="chat-name">${chatName}</div>
             <div class="chat-last-msg">${lastMsg}</div>
@@ -570,30 +919,77 @@
           <div class="chat-time">${time}</div>
         `;
         item.addEventListener('click', () => selectChat(chat));
-        chatList.appendChild(item);
+        listEl.appendChild(item);
       });
+    }
+
+    function renderContactsList() {
+      const listEl = document.getElementById('chatList');
+      listEl.innerHTML = '';
+      contacts.forEach(user => {
+        if (user.id === currentUser.id) return;
+        const item = document.createElement('div');
+        item.className = 'chat-item';
+        item.innerHTML = `
+          <div class="chat-avatar"><img src="${user.avatar || `https://ui-avatars.com/api/?name=${user.username}&background=7a5cff&color=fff`}"></div>
+          <div class="chat-info">
+            <div class="chat-name">${user.username}</div>
+            <div class="chat-last-msg">${user.bio || 'Hey there!'}</div>
+          </div>
+        `;
+        item.addEventListener('click', () => startDirectChat(user));
+        listEl.appendChild(item);
+      });
+    }
+
+    function renderCallsList() {
+      const listEl = document.getElementById('chatList');
+      listEl.innerHTML = '<div style="color: #b0b0d0; text-align: center; margin-top: 30px;">Call history will appear here</div>';
     }
 
     function selectChat(chat) {
       currentChat = chat;
-      const chatName = chat.type === 'direct'
-        ? (chat.participants.find(p => p !== currentUser?.id)?.username || 'User')
-        : chat.name;
-      headerName.textContent = chatName;
-      headerAvatarImg.src = chat.type === 'direct'
-        ? `https://ui-avatars.com/api/?name=${chatName}&background=7a5cff&color=fff`
-        : 'https://ui-avatars.com/api/?name=Group&background=ff5ad6&color=fff';
-      loadMessages(chat.id);
-      socket.emit('joinChat', chat.id);
-      // Hide sidebar on mobile after selection
-      if (window.innerWidth <= 768) sidebar.classList.remove('open');
+      document.getElementById('headerName').textContent = chat.name || 'Chat';
+      document.getElementById('headerAvatar').innerHTML = chat.id === BOT_ID ? '<span style="font-size: 28px;">🤖</span>' : `<img src="${chat.avatar || `https://ui-avatars.com/api/?name=${chat.name}&background=7a5cff&color=fff`}">`;
+      document.getElementById('headerStatus').textContent = 'online';
+      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('messageInput').disabled = false;
+      document.getElementById('messageInput').focus();
+
+      // Load messages for this chat (from cache or server)
+      if (chat.id === BOT_ID) {
+        // local bot chat
+        if (!messagesByChat[BOT_ID]) messagesByChat[BOT_ID] = [];
+        renderMessages();
+      } else {
+        // load from server
+        fetchWithAuth(`/api/messages/${chat.id}`)
+          .then(res => res.json())
+          .then(msgs => {
+            messagesByChat[chat.id] = msgs;
+            renderMessages();
+          });
+      }
     }
 
     function renderMessages() {
-      messagesContainer.innerHTML = '';
-      messages.forEach(msg => {
+      const container = document.getElementById('messagesContainer');
+      if (!currentChat) {
+        container.innerHTML = `
+          <div class="empty-chat">
+            <i class="fas fa-comments"></i>
+            <h2>Welcome to Craheapp</h2>
+            <p>Select a chat or start a new conversation</p>
+            <button onclick="document.getElementById('newChatBtn').click()">Start chat</button>
+          </div>
+        `;
+        return;
+      }
+      const msgs = messagesByChat[currentChat.id] || [];
+      container.innerHTML = '';
+      msgs.forEach(msg => {
         const div = document.createElement('div');
-        div.className = `message ${msg.senderId === currentUser?.id ? 'sent' : 'received'}`;
+        div.className = `message ${msg.senderId === currentUser.id ? 'sent' : 'received'}`;
         const time = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         let mediaHtml = '';
         if (msg.type === 'image' && msg.mediaUrl) {
@@ -605,7 +1001,7 @@
         } else if (msg.type === 'voice' && msg.mediaUrl) {
           mediaHtml = `<audio src="${msg.mediaUrl}" controls></audio>`;
         }
-        const replyHtml = msg.replyTo ? `<div class="reply-context">Replying to a message</div>` : '';
+        const replyHtml = msg.replyTo ? `<div class="message-reply">Replying to a message</div>` : '';
         const reactionsHtml = Object.entries(msg.reactions || {}).map(([emoji, users]) =>
           `<span class="reaction" onclick="addReaction('${msg.id}', '${emoji}')">${emoji} ${users.length}</span>`
         ).join('');
@@ -613,14 +1009,302 @@
           <div class="message-bubble">
             ${replyHtml}
             ${mediaHtml}
-            ${msg.content || ''}
+            <span>${msg.content || ''}</span>
             <div class="message-time">${time} ${msg.edited ? '(edited)' : ''}</div>
             <div class="message-reactions">${reactionsHtml}</div>
           </div>
         `;
-        messagesContainer.appendChild(div);
+        container.appendChild(div);
       });
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      container.scrollTop = container.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (!text || !currentChat) return;
+      if (currentChat.id === BOT_ID) {
+        // Handle bot locally
+        const userMsg = {
+          id: 'msg-' + Date.now(),
+          chatId: BOT_ID,
+          senderId: currentUser.id,
+          content: text,
+          type: 'text',
+          createdAt: new Date().toISOString(),
+          reactions: {}
+        };
+        if (!messagesByChat[BOT_ID]) messagesByChat[BOT_ID] = [];
+        messagesByChat[BOT_ID].push(userMsg);
+        renderMessages();
+
+        // Call AI API
+        try {
+          const res = await fetchWithAuth('/api/ai/chat', {
+            method: 'POST',
+            body: JSON.stringify({ message: text, chatId: BOT_ID })
+          });
+          const data = await res.json();
+          const botMsg = {
+            id: 'msg-' + Date.now() + 1,
+            chatId: BOT_ID,
+            senderId: BOT_ID,
+            content: data.reply,
+            type: 'text',
+            createdAt: new Date().toISOString(),
+            reactions: {}
+          };
+          messagesByChat[BOT_ID].push(botMsg);
+          renderMessages();
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        // Send to server
+        const payload = { chatId: currentChat.id, content: text, type: 'text' };
+        try {
+          const res = await fetchWithAuth('/api/messages', { method: 'POST', body: JSON.stringify(payload) });
+          const newMsg = await res.json();
+          if (!messagesByChat[currentChat.id]) messagesByChat[currentChat.id] = [];
+          messagesByChat[currentChat.id].push(newMsg);
+          renderMessages();
+        } catch (err) {
+          console.error(err);
+        }
+      }
+      input.value = '';
+      document.getElementById('sendBtn').disabled = true;
+    }
+
+    function showNewChatModal() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h2>New Chat</h2>
+          <button id="newPrivateBtn"><i class="fas fa-user"></i> Private chat</button>
+          <button id="newGroupBtn"><i class="fas fa-users"></i> New group</button>
+          <button id="newChannelBtn"><i class="fas fa-bullhorn"></i> New channel</button>
+          <button class="secondary-btn" id="closeModalBtn">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      document.getElementById('newPrivateBtn').addEventListener('click', () => {
+        modal.remove();
+        showContactPicker();
+      });
+      document.getElementById('newGroupBtn').addEventListener('click', () => {
+        modal.remove();
+        showCreateGroupModal();
+      });
+      document.getElementById('newChannelBtn').addEventListener('click', () => {
+        modal.remove();
+        showCreateChannelModal();
+      });
+      document.getElementById('closeModalBtn').addEventListener('click', () => modal.remove());
+    }
+
+    function showContactPicker() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card" style="width: 500px;">
+          <h2>Select contact</h2>
+          <div style="max-height: 300px; overflow-y: auto;" id="contactList"></div>
+          <button class="secondary-btn" id="closeContactPicker">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      const listDiv = document.getElementById('contactList');
+      contacts.forEach(user => {
+        if (user.id === currentUser.id) return;
+        const btn = document.createElement('button');
+        btn.style.marginBottom = '8px';
+        btn.innerHTML = `<i class="fas fa-user"></i> ${user.username}`;
+        btn.addEventListener('click', async () => {
+          // Create direct chat with this user
+          const res = await fetchWithAuth('/api/chats', {
+            method: 'POST',
+            body: JSON.stringify({ type: 'direct', participants: [currentUser.id, user.id] })
+          });
+          const chat = await res.json();
+          chats.push(chat);
+          renderChatList();
+          modal.remove();
+          selectChat(chat);
+        });
+        listDiv.appendChild(btn);
+      });
+      document.getElementById('closeContactPicker').addEventListener('click', () => modal.remove());
+    }
+
+    function showCreateGroupModal() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h2>Create Group</h2>
+          <input type="text" id="groupName" placeholder="Group name">
+          <textarea id="groupDesc" placeholder="Description" rows="3"></textarea>
+          <button id="createGroupBtn">Create</button>
+          <button class="secondary-btn" id="closeGroupModal">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      document.getElementById('createGroupBtn').addEventListener('click', async () => {
+        const name = document.getElementById('groupName').value.trim();
+        if (!name) return alert('Group name required');
+        const res = await fetchWithAuth('/api/chats', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'group', name, participants: [currentUser.id] })
+        });
+        const chat = await res.json();
+        chats.push(chat);
+        renderChatList();
+        modal.remove();
+        selectChat(chat);
+      });
+      document.getElementById('closeGroupModal').addEventListener('click', () => modal.remove());
+    }
+
+    function showCreateChannelModal() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h2>Create Channel</h2>
+          <input type="text" id="channelName" placeholder="Channel name">
+          <textarea id="channelDesc" placeholder="Description" rows="3"></textarea>
+          <button id="createChannelBtn">Create</button>
+          <button class="secondary-btn" id="closeChannelModal">Cancel</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      document.getElementById('createChannelBtn').addEventListener('click', async () => {
+        const name = document.getElementById('channelName').value.trim();
+        if (!name) return alert('Channel name required');
+        const res = await fetchWithAuth('/api/channels', {
+          method: 'POST',
+          body: JSON.stringify({ name, description: document.getElementById('channelDesc').value })
+        });
+        const channel = await res.json();
+        // Convert channel to chat-like object for UI
+        const chat = {
+          id: channel.id,
+          type: 'channel',
+          name: channel.name,
+          participants: [currentUser.id],
+          lastMessage: null
+        };
+        chats.push(chat);
+        renderChatList();
+        modal.remove();
+        selectChat(chat);
+      });
+      document.getElementById('closeChannelModal').addEventListener('click', () => modal.remove());
+    }
+
+    function showSettingsModal() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h2>Settings</h2>
+          <p style="margin-bottom: 20px;">Theme: Dark (fixed)</p>
+          <p>Notifications: <i class="fas fa-bell"></i></p>
+          <p>Language: English</p>
+          <button class="secondary-btn" id="closeSettings">Close</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      document.getElementById('closeSettings').addEventListener('click', () => modal.remove());
+    }
+
+    function showProfileModal() {
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-card">
+          <h2>Profile</h2>
+          <p><strong>Username:</strong> ${currentUser.username}</p>
+          <p><strong>Email:</strong> ${currentUser.email || 'Not set'}</p>
+          <p><strong>Bio:</strong> ${currentUser.bio || 'Hey there!'}</p>
+          <button class="secondary-btn" id="closeProfile">Close</button>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      document.getElementById('closeProfile').addEventListener('click', () => modal.remove());
+    }
+
+    function toggleRightPanel() {
+      const panel = document.getElementById('rightPanel');
+      panel.classList.toggle('hidden');
+    }
+
+    function showEmojiPicker() {
+      if (!emojiPicker) {
+        emojiPicker = document.createElement('emoji-picker');
+        emojiPicker.style.position = 'absolute';
+        emojiPicker.style.bottom = '80px';
+        emojiPicker.style.right = '20px';
+        emojiPicker.style.zIndex = '3000';
+        emojiPicker.addEventListener('emoji-click', event => {
+          const input = document.getElementById('messageInput');
+          input.value += event.detail.unicode;
+          input.dispatchEvent(new Event('input'));
+          emojiPicker.remove();
+          emojiPicker = null;
+        });
+        document.body.appendChild(emojiPicker);
+      } else {
+        emojiPicker.remove();
+        emojiPicker = null;
+      }
+    }
+
+    function attachFile() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,video/*,audio/*,application/pdf';
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetchWithAuth('/api/upload', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }, // no Content-Type
+          body: formData
+        });
+        const data = await res.json();
+        // send message with media
+        const type = file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : (file.type.startsWith('audio/') ? 'voice' : 'file'));
+        const payload = { chatId: currentChat.id, content: '', type, mediaUrl: data.url };
+        const msgRes = await fetchWithAuth('/api/messages', { method: 'POST', body: JSON.stringify(payload) });
+        const newMsg = await msgRes.json();
+        if (!messagesByChat[currentChat.id]) messagesByChat[currentChat.id] = [];
+        messagesByChat[currentChat.id].push(newMsg);
+        renderMessages();
+      };
+      input.click();
+    }
+
+    function startDirectChat(user) {
+      // Check if chat already exists
+      const existing = chats.find(c => c.type === 'direct' && c.participants?.includes(user.id));
+      if (existing) {
+        selectChat(existing);
+      } else {
+        // Create new direct chat
+        fetchWithAuth('/api/chats', {
+          method: 'POST',
+          body: JSON.stringify({ type: 'direct', participants: [currentUser.id, user.id] })
+        }).then(res => res.json()).then(chat => {
+          chats.push(chat);
+          renderChatList();
+          selectChat(chat);
+        });
+      }
     }
 
     function updateChatLastMessage(msg) {
@@ -631,100 +1315,22 @@
       }
     }
 
-    // ==================== Composer ====================
-    sendBtn.addEventListener('click', () => {
-      const text = messageInput.value.trim();
-      if (text) {
-        sendMessage(text);
-        messageInput.value = '';
-      }
-    });
-
-    messageInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') sendBtn.click();
-      if (currentChat) {
-        socket.emit('typing', { chatId: currentChat.id, isTyping: true });
-        clearTimeout(window.typingTimeout);
-        window.typingTimeout = setTimeout(() => {
-          socket.emit('typing', { chatId: currentChat.id, isTyping: false });
-        }, 2000);
-      }
-    });
-
-    // Emoji (mock)
-    emojiBtn.addEventListener('click', () => {
-      messageInput.value += '😊';
-    });
-
-    // Attach (mock)
-    attachBtn.addEventListener('click', () => {
-      alert('File attachment – mock');
-    });
-
-    // Voice (mock)
-    voiceBtn.addEventListener('click', () => {
-      alert('Voice message – mock');
-    });
-
-    // AI Panel
-    aiAssistantBtn.addEventListener('click', () => {
-      aiPanel.classList.toggle('visible');
-    });
-
-    aiSummarize.addEventListener('click', async () => {
-      const res = await fetchWithAuth('/api/ai/summarize', { method: 'POST', body: JSON.stringify({ messages }) });
-      const data = await res.json();
-      alert(data.summary);
-    });
-
-    aiTranslate.addEventListener('click', async () => {
-      const lang = prompt('Target language (e.g., en, ru):');
-      const text = prompt('Text to translate:');
-      if (!lang || !text) return;
-      const res = await fetchWithAuth('/api/ai/translate', { method: 'POST', body: JSON.stringify({ text, targetLanguage: lang }) });
-      const data = await res.json();
-      alert(data.translated);
-    });
-
-    aiSmartReply.addEventListener('click', async () => {
-      const res = await fetchWithAuth('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message: 'Generate reply', chatId: currentChat?.id }) });
-      const data = await res.json();
-      messageInput.value = data.reply;
-    });
-
-    aiGenerate.addEventListener('click', async () => {
-      const prompt = prompt('Enter a prompt:');
-      if (!prompt) return;
-      const res = await fetchWithAuth('/api/ai/generate', { method: 'POST', body: JSON.stringify({ prompt }) });
-      const data = await res.json();
-      alert(data.generated);
-    });
-
-    // Profile menu (logout)
-    profileMenuBtn.addEventListener('click', () => {
-      if (confirm('Logout?')) {
-        localStorage.removeItem('token');
-        window.location.reload();
-      }
-    });
-
-    // New chat (mock)
-    newChatBtn.addEventListener('click', () => {
-      alert('New chat – would open contact list');
-    });
-
-    // Calls (mock)
-    callBtn.addEventListener('click', () => alert('Voice call – mock'));
-    videoCallBtn.addEventListener('click', () => alert('Video call – mock'));
-
-    // Reaction function (needs to be global for onclick)
+    // Global reaction function (used in onclick)
     window.addReaction = async function(messageId, emoji) {
       await fetchWithAuth(`/api/messages/${messageId}/reactions`, {
         method: 'POST',
         body: JSON.stringify({ emoji, action: 'add' })
       });
-      loadMessages(currentChat.id);
+      // Reload messages to show reaction
+      if (currentChat) {
+        const msgs = await fetchWithAuth(`/api/messages/${currentChat.id}`).then(r => r.json());
+        messagesByChat[currentChat.id] = msgs;
+        renderMessages();
+      }
     };
+
+    // Start the app
+    initApp();
   </script>
 </body>
 </html>
