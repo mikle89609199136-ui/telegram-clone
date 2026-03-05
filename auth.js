@@ -1,7 +1,3 @@
-
-**FILE: auth.js**
-
-```javascript
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
@@ -85,3 +81,4 @@ function verifyToken(token) {
 }
 
 module.exports = { register, login, verifyTwoFactor, generateTwoFactorSecret, enableTwoFactorForUser, verifyToken };
+
