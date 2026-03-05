@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
   <title>Craheapp Messenger</title>
-  <!-- Font Awesome Icons -->
+  <!-- Font Awesome 6 (free) -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <!-- Emoji Picker -->
+  <!-- Emoji Picker (Apple style) -->
   <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.21.1/index.js" type="module"></script>
-  <!-- Socket.IO -->
+  <!-- Socket.IO client -->
   <script src="/socket.io/socket.io.js"></script>
   <style>
     * {
@@ -17,6 +17,7 @@
       box-sizing: border-box;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
     }
+
     body {
       background: #0f0f18;
       height: 100vh;
@@ -25,6 +26,7 @@
       justify-content: center;
       overflow: hidden;
     }
+
     #app {
       width: 100%;
       height: 100%;
@@ -37,15 +39,16 @@
       box-shadow: 0 20px 40px rgba(0,0,0,0.6);
       border: 1px solid #2f2f50;
     }
-    /* Sidebar (left panel) */
+
+    /* ========== SIDEBAR ========== */
     .sidebar {
       width: 320px;
       background: #1a1a2e;
       border-right: 1px solid #2f2f50;
       display: flex;
       flex-direction: column;
-      transition: width 0.2s;
     }
+
     .sidebar-header {
       padding: 20px 16px;
       display: flex;
@@ -53,6 +56,7 @@
       justify-content: space-between;
       border-bottom: 1px solid #2f2f50;
     }
+
     .logo {
       font-size: 22px;
       font-weight: 700;
@@ -60,10 +64,12 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
+
     .sidebar-actions {
       display: flex;
       gap: 8px;
     }
+
     .sidebar-actions button {
       width: 40px;
       height: 40px;
@@ -73,18 +79,21 @@
       color: #b0b0d0;
       font-size: 20px;
       cursor: pointer;
-      transition: 0.2s;
+      transition: 0.15s;
     }
+
     .sidebar-actions button:hover {
       background: #2f2f50;
       color: white;
     }
+
     .sidebar-tabs {
       display: flex;
       padding: 12px 16px;
-      gap: 10px;
+      gap: 8px;
       border-bottom: 1px solid #2f2f50;
     }
+
     .tab-btn {
       flex: 1;
       height: 40px;
@@ -95,16 +104,19 @@
       font-size: 15px;
       font-weight: 500;
       cursor: pointer;
-      transition: 0.2s;
+      transition: 0.15s;
     }
+
     .tab-btn.active {
       background: #7a5cff;
       color: white;
     }
+
     .search-box {
       padding: 12px 16px;
       position: relative;
     }
+
     .search-box i {
       position: absolute;
       left: 28px;
@@ -112,6 +124,7 @@
       color: #b0b0d0;
       font-size: 16px;
     }
+
     .search-box input {
       width: 100%;
       height: 44px;
@@ -123,12 +136,15 @@
       font-size: 15px;
       outline: none;
     }
+
     .search-box input::placeholder { color: #b0b0d0; }
+
     .chat-list {
       flex: 1;
       overflow-y: auto;
       padding: 8px 12px;
     }
+
     .chat-item {
       display: flex;
       align-items: center;
@@ -140,9 +156,12 @@
       transition: 0.15s;
       position: relative;
     }
-    .chat-item:hover, .chat-item.active {
+
+    .chat-item:hover,
+    .chat-item.active {
       background: #2a2a44;
     }
+
     .chat-avatar {
       width: 48px;
       height: 48px;
@@ -158,11 +177,18 @@
       overflow: hidden;
       flex-shrink: 0;
     }
-    .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .chat-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
     .chat-info {
       flex: 1;
       min-width: 0;
     }
+
     .chat-name {
       color: white;
       font-weight: 600;
@@ -172,6 +198,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .chat-last-msg {
       color: #b0b0d0;
       font-size: 13px;
@@ -179,6 +206,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
     .chat-time {
       color: #b0b0d0;
       font-size: 11px;
@@ -186,6 +214,7 @@
       top: 12px;
       right: 12px;
     }
+
     .chat-badge {
       background: #ff5ad6;
       color: white;
@@ -196,13 +225,15 @@
       bottom: 12px;
       right: 12px;
     }
-    /* Main chat area */
+
+    /* ========== MAIN CHAT AREA ========== */
     .chat-area {
       flex: 1;
       display: flex;
       flex-direction: column;
       background: #141425;
     }
+
     .chat-header {
       height: 70px;
       padding: 0 24px;
@@ -211,11 +242,13 @@
       justify-content: space-between;
       border-bottom: 1px solid #2f2f50;
     }
+
     .header-left {
       display: flex;
       align-items: center;
       gap: 15px;
     }
+
     .header-avatar {
       width: 44px;
       height: 44px;
@@ -223,20 +256,29 @@
       background: linear-gradient(135deg, #7a5cff, #ff5ad6);
       overflow: hidden;
     }
-    .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    .header-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
     .header-info h3 {
       color: white;
       font-size: 18px;
       font-weight: 600;
     }
+
     .header-info p {
       color: #b0b0d0;
       font-size: 13px;
     }
+
     .header-actions {
       display: flex;
       gap: 12px;
     }
+
     .header-actions button {
       width: 44px;
       height: 44px;
@@ -248,10 +290,12 @@
       cursor: pointer;
       transition: 0.15s;
     }
+
     .header-actions button:hover {
       background: #7a5cff;
       border-color: #7a5cff;
     }
+
     .messages-container {
       flex: 1;
       overflow-y: auto;
@@ -260,36 +304,84 @@
       flex-direction: column;
       gap: 8px;
     }
+
+    .empty-chat {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #b0b0d0;
+      gap: 20px;
+    }
+
+    .empty-chat i {
+      font-size: 80px;
+      color: #7a5cff;
+    }
+
+    .empty-chat h2 {
+      color: white;
+      font-size: 28px;
+    }
+
+    .empty-chat p {
+      font-size: 16px;
+    }
+
+    .empty-chat button {
+      background: #7a5cff;
+      border: none;
+      padding: 14px 32px;
+      border-radius: 40px;
+      color: white;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    /* ========== MESSAGE BUBBLES ========== */
     .message {
       max-width: 600px;
       display: flex;
       margin-bottom: 4px;
       animation: fadeIn 0.2s ease;
     }
-    .message.sent { align-self: flex-end; }
-    .message.received { align-self: flex-start; }
+
+    .message.sent {
+      align-self: flex-end;
+    }
+
+    .message.received {
+      align-self: flex-start;
+    }
+
     .message-bubble {
       padding: 10px 16px;
       border-radius: 18px;
       position: relative;
       word-wrap: break-word;
     }
+
     .message.sent .message-bubble {
       background: #7a5cff;
       color: white;
       border-bottom-right-radius: 4px;
     }
+
     .message.received .message-bubble {
       background: #25253f;
       color: white;
       border-bottom-left-radius: 4px;
     }
+
     .message-time {
       font-size: 11px;
       color: rgba(255,255,255,0.5);
       margin-top: 4px;
       text-align: right;
     }
+
     .message-reply {
       font-size: 13px;
       padding: 4px 8px;
@@ -299,18 +391,21 @@
       cursor: pointer;
       border-left: 3px solid #ff5ad6;
     }
+
     .message-media {
       max-width: 300px;
       border-radius: 12px;
       cursor: pointer;
       margin-top: 4px;
     }
+
     .message-reactions {
       display: flex;
       gap: 5px;
       margin-top: 6px;
       flex-wrap: wrap;
     }
+
     .reaction {
       background: rgba(255,255,255,0.15);
       border-radius: 20px;
@@ -322,11 +417,13 @@
       cursor: pointer;
       transition: 0.1s;
     }
+
     .reaction:hover {
       background: #7a5cff;
       transform: scale(1.05);
     }
-    /* Composer */
+
+    /* ========== COMPOSER ========== */
     .composer {
       padding: 16px 24px;
       border-top: 1px solid #2f2f50;
@@ -334,10 +431,12 @@
       align-items: center;
       gap: 12px;
     }
+
     .composer-actions {
       display: flex;
       gap: 8px;
     }
+
     .composer-actions button {
       width: 44px;
       height: 44px;
@@ -349,10 +448,12 @@
       cursor: pointer;
       transition: 0.15s;
     }
+
     .composer-actions button:hover {
       background: #2f2f50;
       color: white;
     }
+
     .composer-input {
       flex: 1;
       display: flex;
@@ -362,6 +463,7 @@
       padding: 0 16px;
       border: 1px solid #2f2f50;
     }
+
     .composer-input input {
       flex: 1;
       background: none;
@@ -371,7 +473,9 @@
       font-size: 16px;
       outline: none;
     }
+
     .composer-input input::placeholder { color: #b0b0d0; }
+
     .composer-input button {
       background: none;
       border: none;
@@ -380,6 +484,7 @@
       cursor: pointer;
       padding: 0 4px;
     }
+
     .send-btn {
       width: 52px;
       height: 52px;
@@ -391,17 +496,22 @@
       cursor: pointer;
       transition: 0.15s;
     }
+
     .send-btn:hover {
       background: #8b6eff;
       transform: scale(1.03);
     }
-    .send-btn:active { transform: scale(0.97); }
+
+    .send-btn:active {
+      transform: scale(0.97);
+    }
+
     .send-btn:disabled {
       opacity: 0.4;
       pointer-events: none;
     }
 
-    /* Right panel (AI / Info) */
+    /* ========== RIGHT PANEL (AI / INFO) ========== */
     .right-panel {
       width: 340px;
       background: #1a1a2e;
@@ -410,11 +520,16 @@
       flex-direction: column;
       overflow-y: auto;
     }
-    .right-panel.hidden { display: none; }
+
+    .right-panel.hidden {
+      display: none;
+    }
+
     .panel-header {
       padding: 20px;
       border-bottom: 1px solid #2f2f50;
     }
+
     .panel-header h3 {
       color: white;
       font-size: 18px;
@@ -422,16 +537,20 @@
       align-items: center;
       gap: 10px;
     }
+
     .panel-content {
       padding: 20px;
       flex: 1;
     }
+
     .ai-message {
       background: #25253f;
       border-radius: 16px;
       padding: 16px;
       margin-bottom: 16px;
+      color: #b0b0d0;
     }
+
     .ai-button {
       width: 100%;
       padding: 12px;
@@ -447,34 +566,45 @@
       align-items: center;
       gap: 10px;
     }
+
     .ai-button:hover {
       background: #7a5cff;
     }
 
-    /* Modals */
+    /* ========== MODALS ========== */
     .modal-overlay {
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.7);
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(8px);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 2000;
     }
+
     .modal-card {
       background: #1f1f33;
       border-radius: 28px;
       width: 460px;
       max-width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
       padding: 30px;
       border: 1px solid #2f2f50;
       color: white;
     }
+
     .modal-card h2 {
       margin-bottom: 24px;
       font-size: 24px;
     }
-    .modal-card input, .modal-card textarea {
+
+    .modal-card input,
+    .modal-card textarea {
       width: 100%;
       padding: 14px 16px;
       background: #0f0f18;
@@ -484,6 +614,7 @@
       font-size: 16px;
       margin-bottom: 16px;
     }
+
     .modal-card button {
       width: 100%;
       padding: 16px;
@@ -496,55 +627,79 @@
       cursor: pointer;
       margin-bottom: 12px;
     }
+
     .modal-card .secondary-btn {
       background: transparent;
       border: 1px solid #2f2f50;
       color: #b0b0d0;
     }
 
-    /* Empty state */
-    .empty-chat {
-      flex: 1;
+    .tab-header {
       display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #b0b0d0;
-      gap: 20px;
-    }
-    .empty-chat i {
-      font-size: 80px;
-      color: #7a5cff;
-    }
-    .empty-chat h2 {
-      color: white;
-      font-size: 28px;
-    }
-    .empty-chat p {
-      font-size: 16px;
-    }
-    .empty-chat button {
-      background: #7a5cff;
-      border: none;
-      padding: 14px 32px;
-      border-radius: 40px;
-      color: white;
-      font-weight: 600;
-      font-size: 16px;
-      cursor: pointer;
+      gap: 10px;
+      margin-bottom: 20px;
     }
 
+    .tab-header button {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: #b0b0d0;
+      font-size: 16px;
+      padding: 10px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+
+    .tab-header button.active {
+      color: #7a5cff;
+      border-bottom-color: #7a5cff;
+    }
+
+    .contact-item {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: 0.15s;
+      margin-bottom: 8px;
+      background: #25253f;
+    }
+
+    .contact-item:hover {
+      background: #7a5cff;
+    }
+
+    .contact-item img {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      margin-right: 12px;
+    }
+
+    .contact-info h4 {
+      color: white;
+      font-weight: 500;
+    }
+
+    .contact-info p {
+      color: #b0b0d0;
+      font-size: 13px;
+    }
+
+    /* ========== ANIMATIONS ========== */
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* Scrollbar */
+    /* ========== SCROLLBAR ========== */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #7a5cff; border-radius: 10px; }
 
-    /* Responsive */
+    /* ========== RESPONSIVE ========== */
     @media (max-width: 1000px) {
       .right-panel { width: 280px; }
     }
@@ -559,114 +714,133 @@
   <div id="app"></div>
 
   <script type="module">
-    // ---------- Configuration ----------
+    // ------------------------------------------------------------
+    // Global state & config
+    // ------------------------------------------------------------
     const API_BASE = '';
     let token = localStorage.getItem('token');
     let currentUser = null;
-    let currentChat = null; // { id, type, name, participants, ... }
-    let chats = []; // array of chat objects from server
-    let messagesByChat = {}; // local cache: { chatId: [messages] }
-    let contacts = []; // will be loaded from /api/users
+    try {
+      currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    } catch { currentUser = null; }
+
+    let currentChat = null;               // { id, type, name, participants, ... }
+    let chats = [];                       // from server + local bot
+    let messagesByChat = {};               // { chatId: [messages] }
+    let contacts = [];
     let socket = null;
     let emojiPicker = null;
+    let replyTo = null;                    // { messageId, content }
 
-    // Special bot ID (local)
     const BOT_ID = 'craheapp-bot';
     const BOT_NAME = 'CRAHEAPP.BOT';
     const BOT_AVATAR = '🤖';
-
-    // First time flag
     const FIRST_TIME_KEY = 'craheapp_first_time';
 
-    // ---------- Helper functions ----------
+    // ------------------------------------------------------------
+    // Helper: fetch with auth
+    // ------------------------------------------------------------
     async function fetchWithAuth(url, options = {}) {
-      options.headers = {
-        ...options.headers,
+      const headers = {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...options.headers,
       };
-      const res = await fetch(url, options);
+      const res = await fetch(url, { ...options, headers });
       if (res.status === 401) {
         localStorage.removeItem('token');
+        localStorage.removeItem('currentUser');
         showAuthModal();
         throw new Error('Unauthorized');
       }
       return res;
     }
 
-    // ---------- Auth Modal ----------
+    // ------------------------------------------------------------
+    // Auth modal (Login / Register)
+    // ------------------------------------------------------------
     function showAuthModal() {
       const modal = document.createElement('div');
       modal.className = 'modal-overlay';
       modal.id = 'authModal';
       modal.innerHTML = `
         <div class="modal-card">
-          <h2 id="authTitle">Login</h2>
-          <input type="text" id="authUsername" placeholder="Username" autocomplete="off">
-          <input type="password" id="authPassword" placeholder="Password">
+          <div class="tab-header">
+            <button class="tab-btn active" data-tab="login">Login</button>
+            <button class="tab-btn" data-tab="register">Register</button>
+          </div>
+          <div id="authContent">
+            <input type="text" id="authUsername" placeholder="Username" autocomplete="off">
+            <input type="password" id="authPassword" placeholder="Password">
+            <div id="registerFields" style="display: none;">
+              <input type="password" id="authConfirm" placeholder="Confirm password">
+            </div>
+          </div>
           <button id="authActionBtn">Login</button>
-          <button class="secondary-btn" id="authToggleBtn">Create account</button>
+          <button class="secondary-btn" id="closeAuthModal">Cancel</button>
         </div>
       `;
       document.body.appendChild(modal);
 
+      const loginTab = modal.querySelector('[data-tab="login"]');
+      const regTab = modal.querySelector('[data-tab="register"]');
+      const authAction = document.getElementById('authActionBtn');
+      const authUsername = document.getElementById('authUsername');
+      const authPassword = document.getElementById('authPassword');
+      const authConfirm = document.getElementById('authConfirm');
+      const registerFields = document.getElementById('registerFields');
+      const closeBtn = document.getElementById('closeAuthModal');
+
       let isLogin = true;
-      const title = document.getElementById('authTitle');
-      const username = document.getElementById('authUsername');
-      const password = document.getElementById('authPassword');
-      const actionBtn = document.getElementById('authActionBtn');
-      const toggleBtn = document.getElementById('authToggleBtn');
 
-      toggleBtn.addEventListener('click', () => {
-        isLogin = !isLogin;
-        title.textContent = isLogin ? 'Login' : 'Register';
-        actionBtn.textContent = isLogin ? 'Login' : 'Register';
-        toggleBtn.textContent = isLogin ? 'Create account' : 'Back to login';
-      });
+      function setActive(tab) {
+        modal.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        tab.classList.add('active');
+        isLogin = tab === loginTab;
+        authAction.textContent = isLogin ? 'Login' : 'Register';
+        registerFields.style.display = isLogin ? 'none' : 'block';
+      }
 
-      actionBtn.addEventListener('click', async () => {
-        const uname = username.value.trim();
-        const pwd = password.value.trim();
-        if (!uname || !pwd) return alert('Fill all fields');
+      loginTab.addEventListener('click', () => setActive(loginTab));
+      regTab.addEventListener('click', () => setActive(regTab));
+
+      authAction.addEventListener('click', async () => {
+        const username = authUsername.value.trim();
+        const password = authPassword.value;
+        if (!username || !password) return alert('Fill all fields');
+        if (!isLogin) {
+          const confirm = authConfirm.value;
+          if (password !== confirm) return alert('Passwords do not match');
+        }
+
         const url = isLogin ? '/api/login' : '/api/register';
         try {
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: uname, password: pwd })
+            body: JSON.stringify({ username, password })
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error);
+          if (!res.ok) throw new Error(data.error || 'Request failed');
           token = data.token;
           currentUser = data.user;
           localStorage.setItem('token', token);
+          localStorage.setItem('currentUser', JSON.stringify(currentUser));
           modal.remove();
-          initApp();
+          initApp(); // restart app with new token
         } catch (err) {
           alert(err.message);
         }
       });
+
+      closeBtn.addEventListener('click', () => modal.remove());
     }
 
-    // ---------- Initialize App ----------
+    // ------------------------------------------------------------
+    // App initialization
+    // ------------------------------------------------------------
     function initApp() {
-      if (!token) {
-        showAuthModal();
-        return;
-      }
-      // Load current user from token? We have currentUser from login, but if page refreshed, we need to fetch /api/users/me or similar.
-      // For simplicity, we'll store user in localStorage after login. But here we don't have /api/users/me endpoint. We'll use token info.
-      // Actually we have currentUser from login response, but if page reloads we need to get user again.
-      // We'll just assume token is valid and fetch /api/chats to get user info? Not ideal.
-      // Let's add a /api/auth/me endpoint? Not present. We'll store user in localStorage after login.
-      // When page loads, we have token but no currentUser. We'll fetch /api/chats and if success, we can assume user is valid.
-      // But we need user id for creating chats. So we'll decode token? Not safe.
-      // Instead, after login we stored currentUser in localStorage.
-      const storedUser = localStorage.getItem('currentUser');
-      if (storedUser) {
-        currentUser = JSON.parse(storedUser);
-      } else {
-        // If no stored user, show auth
+      if (!token || !currentUser) {
         showAuthModal();
         return;
       }
@@ -679,27 +853,38 @@
           messagesByChat[msg.chatId].push(msg);
           renderMessages();
         }
-        updateChatLastMessage(msg);
+        // Update last message in chat list
+        const chat = chats.find(c => c.id === msg.chatId);
+        if (chat) {
+          chat.lastMessage = msg;
+          renderChatList();
+        }
       });
+
       socket.on('typing', ({ username, isTyping }) => {
-        if (currentChat) document.getElementById('headerStatus').textContent = isTyping ? `${username} typing...` : 'online';
+        if (currentChat) {
+          document.getElementById('headerStatus').textContent = isTyping ? `${username} typing...` : 'online';
+        }
       });
 
       // Load initial data
       loadChats();
       loadContacts();
-      checkFirstTime();
 
       // Render main UI
       renderApp();
+
+      // Check first time to create bot greeting
+      checkFirstTimeBot();
     }
 
     async function loadChats() {
       try {
         const res = await fetchWithAuth('/api/chats');
         const serverChats = await res.json();
-        chats = serverChats; // these are from server (groups, direct)
-        // Add local bot chat if not exists
+        chats = serverChats; // from backend
+
+        // Add local bot chat if not present
         if (!chats.find(c => c.id === BOT_ID)) {
           chats.unshift({
             id: BOT_ID,
@@ -725,10 +910,10 @@
       }
     }
 
-    function checkFirstTime() {
+    function checkFirstTimeBot() {
       if (!localStorage.getItem(FIRST_TIME_KEY)) {
         localStorage.setItem(FIRST_TIME_KEY, 'true');
-        // Create bot chat with welcome message
+        // Send welcome message from bot
         const welcomeMsg = {
           id: 'welcome-' + Date.now(),
           chatId: BOT_ID,
@@ -740,13 +925,15 @@
         };
         if (!messagesByChat[BOT_ID]) messagesByChat[BOT_ID] = [];
         messagesByChat[BOT_ID].push(welcomeMsg);
-        // Also update chat last message
         const botChat = chats.find(c => c.id === BOT_ID);
         if (botChat) botChat.lastMessage = welcomeMsg;
+        renderChatList();
       }
     }
 
-    // ---------- UI Rendering ----------
+    // ------------------------------------------------------------
+    // Main UI render
+    // ------------------------------------------------------------
     function renderApp() {
       const app = document.getElementById('app');
       app.innerHTML = `
@@ -798,7 +985,7 @@
               <button id="voiceBtn"><i class="fas fa-microphone"></i></button>
             </div>
             <div class="composer-input">
-              <input type="text" id="messageInput" placeholder="Message..." autocomplete="off">
+              <input type="text" id="messageInput" placeholder="Message..." autocomplete="off" disabled>
               <button id="sendBtn" class="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
             </div>
           </div>
@@ -824,13 +1011,13 @@
       // Attach event listeners
       document.getElementById('newChatBtn').addEventListener('click', showNewChatModal);
       document.getElementById('settingsBtn').addEventListener('click', showSettingsModal);
-      document.getElementById('callBtn').addEventListener('click', () => alert('Voice call - mock'));
+      document.getElementById('callBtn').addEventListener('click', () => alert('Voice call - mock (WebRTC would be implemented)'));
       document.getElementById('videoCallBtn').addEventListener('click', () => alert('Video call - mock'));
       document.getElementById('aiToggleBtn').addEventListener('click', toggleRightPanel);
       document.getElementById('profileBtn').addEventListener('click', showProfileModal);
       document.getElementById('emojiBtn').addEventListener('click', showEmojiPicker);
       document.getElementById('attachBtn').addEventListener('click', attachFile);
-      document.getElementById('voiceBtn').addEventListener('click', () => alert('Voice message - mock'));
+      document.getElementById('voiceBtn').addEventListener('click', startVoiceRecording);
       document.getElementById('sendBtn').addEventListener('click', sendMessage);
       document.getElementById('messageInput').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendMessage();
@@ -844,29 +1031,30 @@
       });
       document.getElementById('messageInput').addEventListener('input', () => {
         const sendBtn = document.getElementById('sendBtn');
-        if (currentChat && document.getElementById('messageInput').value.trim()) {
-          sendBtn.disabled = false;
-        } else {
-          sendBtn.disabled = true;
-        }
+        sendBtn.disabled = !(currentChat && document.getElementById('messageInput').value.trim());
       });
+      document.getElementById('searchInput').addEventListener('input', filterChats);
 
       // Tab switching
       document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
           e.target.classList.add('active');
-          // load appropriate list (chats/contacts/calls)
-          if (e.target.dataset.tab === 'chats') renderChatList();
-          else if (e.target.dataset.tab === 'contacts') renderContactsList();
-          else if (e.target.dataset.tab === 'calls') renderCallsList();
+          const tab = e.target.dataset.tab;
+          if (tab === 'chats') renderChatList();
+          else if (tab === 'contacts') renderContactsList();
+          else if (tab === 'calls') renderCallsList();
         });
       });
 
       // AI panel buttons
       document.getElementById('aiSummarize').addEventListener('click', async () => {
-        if (!currentChat) return;
-        const res = await fetchWithAuth('/api/ai/summarize', { method: 'POST', body: JSON.stringify({ messages: messagesByChat[currentChat.id] || [] }) });
+        if (!currentChat) return alert('Select a chat first');
+        const msgs = messagesByChat[currentChat.id] || [];
+        const res = await fetchWithAuth('/api/ai/summarize', {
+          method: 'POST',
+          body: JSON.stringify({ messages: msgs })
+        });
         const data = await res.json();
         alert(data.summary);
       });
@@ -874,36 +1062,48 @@
         const lang = prompt('Target language (e.g., en, ru):');
         const text = prompt('Text to translate:');
         if (!lang || !text) return;
-        const res = await fetchWithAuth('/api/ai/translate', { method: 'POST', body: JSON.stringify({ text, targetLanguage: lang }) });
+        const res = await fetchWithAuth('/api/ai/translate', {
+          method: 'POST',
+          body: JSON.stringify({ text, targetLanguage: lang })
+        });
         const data = await res.json();
         alert(data.translated);
       });
       document.getElementById('aiSmartReply').addEventListener('click', async () => {
-        if (!currentChat) return;
-        const res = await fetchWithAuth('/api/ai/chat', { method: 'POST', body: JSON.stringify({ message: 'Generate reply', chatId: currentChat.id }) });
+        if (!currentChat) return alert('Select a chat first');
+        const res = await fetchWithAuth('/api/ai/chat', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Generate reply', chatId: currentChat.id })
+        });
         const data = await res.json();
         document.getElementById('messageInput').value = data.reply;
         document.getElementById('sendBtn').disabled = false;
       });
       document.getElementById('aiGenerate').addEventListener('click', async () => {
-        const prompt = prompt('Enter a prompt:');
-        if (!prompt) return;
-        const res = await fetchWithAuth('/api/ai/generate', { method: 'POST', body: JSON.stringify({ prompt }) });
+        const promptText = prompt('Enter a prompt:');
+        if (!promptText) return;
+        const res = await fetchWithAuth('/api/ai/generate', {
+          method: 'POST',
+          body: JSON.stringify({ prompt: promptText })
+        });
         const data = await res.json();
         alert(data.generated);
       });
 
-      // Initial lists
+      // Initial render
       renderChatList();
+      renderMessages();
     }
 
+    // ------------------------------------------------------------
+    // Sidebar list rendering
+    // ------------------------------------------------------------
     function renderChatList() {
       const listEl = document.getElementById('chatList');
+      if (!listEl) return;
       listEl.innerHTML = '';
       chats.forEach(chat => {
-        const chatName = chat.type === 'direct'
-          ? (chat.name || (chat.participants?.find(p => p !== currentUser?.id) ? 'User' : 'Unknown'))
-          : chat.name;
+        const chatName = chat.name || (chat.participants?.find(p => p !== currentUser?.id) ? 'User' : 'Unknown');
         const lastMsg = chat.lastMessage?.content || 'No messages';
         const time = chat.lastMessage ? new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
         const avatar = chat.id === BOT_ID ? BOT_AVATAR : (chat.avatar || `https://ui-avatars.com/api/?name=${chatName}&background=7a5cff&color=fff`);
@@ -947,29 +1147,48 @@
       listEl.innerHTML = '<div style="color: #b0b0d0; text-align: center; margin-top: 30px;">Call history will appear here</div>';
     }
 
+    function filterChats() {
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      // For simplicity, just re-render chats (could filter)
+      renderChatList();
+    }
+
+    // ------------------------------------------------------------
+    // Chat selection
+    // ------------------------------------------------------------
     function selectChat(chat) {
       currentChat = chat;
       document.getElementById('headerName').textContent = chat.name || 'Chat';
-      document.getElementById('headerAvatar').innerHTML = chat.id === BOT_ID ? '<span style="font-size: 28px;">🤖</span>' : `<img src="${chat.avatar || `https://ui-avatars.com/api/?name=${chat.name}&background=7a5cff&color=fff`}">`;
+      const avatarEl = document.getElementById('headerAvatar');
+      if (chat.id === BOT_ID) {
+        avatarEl.innerHTML = '<span style="font-size: 28px;">🤖</span>';
+      } else {
+        avatarEl.innerHTML = `<img src="${chat.avatar || `https://ui-avatars.com/api/?name=${chat.name}&background=7a5cff&color=fff`}">`;
+      }
       document.getElementById('headerStatus').textContent = 'online';
-      document.getElementById('sendBtn').disabled = false;
       document.getElementById('messageInput').disabled = false;
       document.getElementById('messageInput').focus();
 
-      // Load messages for this chat (from cache or server)
+      // Load messages
       if (chat.id === BOT_ID) {
-        // local bot chat
+        // local bot messages
         if (!messagesByChat[BOT_ID]) messagesByChat[BOT_ID] = [];
         renderMessages();
       } else {
-        // load from server
         fetchWithAuth(`/api/messages/${chat.id}`)
           .then(res => res.json())
           .then(msgs => {
             messagesByChat[chat.id] = msgs;
             renderMessages();
-          });
+          })
+          .catch(err => console.error(err));
       }
+
+      // Join socket room
+      if (socket) socket.emit('joinChat', chat.id);
+
+      // Update chat list active state
+      renderChatList();
     }
 
     function renderMessages() {
@@ -1019,12 +1238,16 @@
       container.scrollTop = container.scrollHeight;
     }
 
+    // ------------------------------------------------------------
+    // Message sending
+    // ------------------------------------------------------------
     async function sendMessage() {
       const input = document.getElementById('messageInput');
       const text = input.value.trim();
       if (!text || !currentChat) return;
+
       if (currentChat.id === BOT_ID) {
-        // Handle bot locally
+        // Local bot handling
         const userMsg = {
           id: 'msg-' + Date.now(),
           chatId: BOT_ID,
@@ -1061,8 +1284,13 @@
         }
       } else {
         // Send to server
-        const payload = { chatId: currentChat.id, content: text, type: 'text' };
         try {
+          const payload = {
+            chatId: currentChat.id,
+            content: text,
+            type: 'text',
+            replyTo: replyTo?.messageId || null
+          };
           const res = await fetchWithAuth('/api/messages', { method: 'POST', body: JSON.stringify(payload) });
           const newMsg = await res.json();
           if (!messagesByChat[currentChat.id]) messagesByChat[currentChat.id] = [];
@@ -1074,8 +1302,12 @@
       }
       input.value = '';
       document.getElementById('sendBtn').disabled = true;
+      replyTo = null; // clear reply after send
     }
 
+    // ------------------------------------------------------------
+    // New chat / group / channel modals
+    // ------------------------------------------------------------
     function showNewChatModal() {
       const modal = document.createElement('div');
       modal.className = 'modal-overlay';
@@ -1122,16 +1354,22 @@
         btn.style.marginBottom = '8px';
         btn.innerHTML = `<i class="fas fa-user"></i> ${user.username}`;
         btn.addEventListener('click', async () => {
-          // Create direct chat with this user
-          const res = await fetchWithAuth('/api/chats', {
-            method: 'POST',
-            body: JSON.stringify({ type: 'direct', participants: [currentUser.id, user.id] })
-          });
-          const chat = await res.json();
-          chats.push(chat);
-          renderChatList();
+          // Check if chat already exists
+          const existing = chats.find(c => c.type === 'direct' && c.participants?.includes(user.id));
+          if (existing) {
+            selectChat(existing);
+          } else {
+            // Create new direct chat
+            const res = await fetchWithAuth('/api/chats', {
+              method: 'POST',
+              body: JSON.stringify({ type: 'direct', participants: [currentUser.id, user.id] })
+            });
+            const chat = await res.json();
+            chats.push(chat);
+            renderChatList();
+            selectChat(chat);
+          }
           modal.remove();
-          selectChat(chat);
         });
         listDiv.appendChild(btn);
       });
@@ -1188,7 +1426,6 @@
           body: JSON.stringify({ name, description: document.getElementById('channelDesc').value })
         });
         const channel = await res.json();
-        // Convert channel to chat-like object for UI
         const chat = {
           id: channel.id,
           type: 'channel',
@@ -1204,15 +1441,27 @@
       document.getElementById('closeChannelModal').addEventListener('click', () => modal.remove());
     }
 
+    // ------------------------------------------------------------
+    // Modals: Settings, Profile
+    // ------------------------------------------------------------
     function showSettingsModal() {
       const modal = document.createElement('div');
       modal.className = 'modal-overlay';
       modal.innerHTML = `
         <div class="modal-card">
           <h2>Settings</h2>
-          <p style="margin-bottom: 20px;">Theme: Dark (fixed)</p>
-          <p>Notifications: <i class="fas fa-bell"></i></p>
-          <p>Language: English</p>
+          <div style="margin-bottom:20px;">
+            <h3>Appearance</h3>
+            <p>Theme: Dark (fixed)</p>
+          </div>
+          <div style="margin-bottom:20px;">
+            <h3>Notifications</h3>
+            <p>Enabled</p>
+          </div>
+          <div style="margin-bottom:20px;">
+            <h3>Language</h3>
+            <p>English</p>
+          </div>
           <button class="secondary-btn" id="closeSettings">Close</button>
         </div>
       `;
@@ -1226,6 +1475,9 @@
       modal.innerHTML = `
         <div class="modal-card">
           <h2>Profile</h2>
+          <div style="text-align: center; margin-bottom:20px;">
+            <img src="${currentUser.avatar || `https://ui-avatars.com/api/?name=${currentUser.username}&background=7a5cff&color=fff`}" style="width:100px; height:100px; border-radius:50%;">
+          </div>
           <p><strong>Username:</strong> ${currentUser.username}</p>
           <p><strong>Email:</strong> ${currentUser.email || 'Not set'}</p>
           <p><strong>Bio:</strong> ${currentUser.bio || 'Hey there!'}</p>
@@ -1236,11 +1488,9 @@
       document.getElementById('closeProfile').addEventListener('click', () => modal.remove());
     }
 
-    function toggleRightPanel() {
-      const panel = document.getElementById('rightPanel');
-      panel.classList.toggle('hidden');
-    }
-
+    // ------------------------------------------------------------
+    // Emoji picker
+    // ------------------------------------------------------------
     function showEmojiPicker() {
       if (!emojiPicker) {
         emojiPicker = document.createElement('emoji-picker');
@@ -1262,13 +1512,16 @@
       }
     }
 
+    // ------------------------------------------------------------
+    // File attachment
+    // ------------------------------------------------------------
     function attachFile() {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*,video/*,audio/*,application/pdf';
       input.onchange = async () => {
         const file = input.files[0];
-        if (!file) return;
+        if (!file || !currentChat) return;
         const formData = new FormData();
         formData.append('file', file);
         const res = await fetchWithAuth('/api/upload', {
@@ -1277,9 +1530,18 @@
           body: formData
         });
         const data = await res.json();
-        // send message with media
-        const type = file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : (file.type.startsWith('audio/') ? 'voice' : 'file'));
-        const payload = { chatId: currentChat.id, content: '', type, mediaUrl: data.url };
+        // Determine message type
+        let type = 'file';
+        if (file.type.startsWith('image/')) type = 'image';
+        else if (file.type.startsWith('video/')) type = 'video';
+        else if (file.type.startsWith('audio/')) type = 'voice';
+        const payload = {
+          chatId: currentChat.id,
+          content: '',
+          type,
+          mediaUrl: data.url,
+          replyTo: replyTo?.messageId || null
+        };
         const msgRes = await fetchWithAuth('/api/messages', { method: 'POST', body: JSON.stringify(payload) });
         const newMsg = await msgRes.json();
         if (!messagesByChat[currentChat.id]) messagesByChat[currentChat.id] = [];
@@ -1289,8 +1551,25 @@
       input.click();
     }
 
+    // ------------------------------------------------------------
+    // Voice message recording (mock)
+    // ------------------------------------------------------------
+    function startVoiceRecording() {
+      alert('Voice recording would start here (MediaRecorder API) – mock');
+    }
+
+    // ------------------------------------------------------------
+    // Right panel toggle
+    // ------------------------------------------------------------
+    function toggleRightPanel() {
+      const panel = document.getElementById('rightPanel');
+      panel.classList.toggle('hidden');
+    }
+
+    // ------------------------------------------------------------
+    // Direct chat starter
+    // ------------------------------------------------------------
     function startDirectChat(user) {
-      // Check if chat already exists
       const existing = chats.find(c => c.type === 'direct' && c.participants?.includes(user.id));
       if (existing) {
         selectChat(existing);
@@ -1299,37 +1578,34 @@
         fetchWithAuth('/api/chats', {
           method: 'POST',
           body: JSON.stringify({ type: 'direct', participants: [currentUser.id, user.id] })
-        }).then(res => res.json()).then(chat => {
-          chats.push(chat);
-          renderChatList();
-          selectChat(chat);
-        });
+        })
+          .then(res => res.json())
+          .then(chat => {
+            chats.push(chat);
+            renderChatList();
+            selectChat(chat);
+          });
       }
     }
 
-    function updateChatLastMessage(msg) {
-      const chat = chats.find(c => c.id === msg.chatId);
-      if (chat) {
-        chat.lastMessage = msg;
-        renderChatList();
-      }
-    }
-
-    // Global reaction function (used in onclick)
+    // ------------------------------------------------------------
+    // Reaction helper (global for onclick)
+    // ------------------------------------------------------------
     window.addReaction = async function(messageId, emoji) {
+      if (!currentChat) return;
       await fetchWithAuth(`/api/messages/${messageId}/reactions`, {
         method: 'POST',
         body: JSON.stringify({ emoji, action: 'add' })
       });
-      // Reload messages to show reaction
-      if (currentChat) {
-        const msgs = await fetchWithAuth(`/api/messages/${currentChat.id}`).then(r => r.json());
-        messagesByChat[currentChat.id] = msgs;
-        renderMessages();
-      }
+      // Reload messages for current chat
+      const msgs = await fetchWithAuth(`/api/messages/${currentChat.id}`).then(r => r.json());
+      messagesByChat[currentChat.id] = msgs;
+      renderMessages();
     };
 
-    // Start the app
+    // ------------------------------------------------------------
+    // Start
+    // ------------------------------------------------------------
     initApp();
   </script>
 </body>
