@@ -1,237 +1,131 @@
 const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const speakeasy = require('speakeasy');
-const QRCode = require('qrcode');
-const { body, validationResult } = require('express-validator');
-const { query, transaction } = require('./data');
-const { generateId, isValidUsername, isValidPassword } = require('./utils');
-const { redis } = require('./database');
+const { query, transaction } = require('./database');
 const logger = require('./logger');
 const config = require('./config');
-const authenticateToken = require('./authMiddleware');
+const { validateEmail, validateUsername, generateId } = require('./utils');
+const rateLimit = require('express-rate-limit');
+const router = express.Router();
 
-// ==================== РЕГИСТРАЦИЯ ====================
-router.post('/register', [
-  body('username').isLength({ min: 3, max: 30 }).matches(/^[a-zA-Z0-9_]+$/).withMessage('Username must be 3-30 characters, alphanumeric or underscore'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => req.ip
+});
+
+router.post('/register', async (req, res) => {
+  const { username, email, password } = req.body;
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  if (!validateUsername(username)) {
+    return res.status(400).json({ error: 'Invalid username (3-30 letters, numbers, underscore)' });
+  }
+  if (!validateEmail(email)) {
+    return res.status(400).json({ error: 'Invalid email' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
   }
 
-  const { username, password } = req.body;
-
   try {
-    const existing = await query('SELECT id FROM users WHERE username = $1', [username]);
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Username already taken' });
+    const existing = await query('SELECT id FROM users WHERE email = $1 OR username = $2', [email, username]);
+    if (existing.rows.length) {
+      return res.status(409).json({ error: 'Email or username already taken' });
     }
 
-    const hashed = await bcrypt.hash(password, 12);
-    const userId = generateId();
-
-    await transaction(async (client) => {
-      await client.query(
-        'INSERT INTO users (id, username, password, created_at) VALUES ($1, $2, $3, NOW())',
-        [userId, username, hashed]
-      );
-    });
-
-    const token = jwt.sign(
-      { id: userId, username },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresIn }
+    const hash = await bcrypt.hash(password, config.bcryptRounds);
+    const result = await query(
+      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, uid, username, email, avatar, bio, verified',
+      [username, email, hash]
     );
+    const user = result.rows[0];
+    await query('INSERT INTO user_settings (user_id) VALUES ($1)', [user.id]);
 
-    logger.info(`New user registered: ${username} (${userId})`);
-    res.status(201).json({ 
-      token, 
-      user: { 
-        id: userId, 
-        username,
-        avatar: null,
-        bio: null,
-        status: 'offline'
-      } 
-    });
+    const tokens = await generateTokens(user.id, req);
+    res.status(201).json({ user, ...tokens });
   } catch (err) {
-    logger.error('Registration error:', err);
-    res.status(500).json({ error: 'Registration failed' });
+    logger.error('Register error', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// ==================== ЛОГИН ====================
-router.post('/login', [
-  body('username').notEmpty().withMessage('Username required'),
-  body('password').notEmpty().withMessage('Password required')
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+router.post('/login', loginLimiter, async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password required' });
   }
 
-  const { username, password, totpCode } = req.body;
-
   try {
-    const userRes = await query('SELECT * FROM users WHERE username = $1', [username]);
-    if (userRes.rows.length === 0) {
+    const result = await query('SELECT id, username, email, password_hash, avatar, bio, verified FROM users WHERE email = $1', [email]);
+    const user = result.rows[0];
+    if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const user = userRes.rows[0];
-
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    if (user.totp_secret) {
-      if (!totpCode) {
-        return res.status(401).json({ error: '2FA code required' });
-      }
-      const verified = speakeasy.totp.verify({
-        secret: user.totp_secret,
-        encoding: 'base32',
-        token: totpCode,
-        window: 2
-      });
-      if (!verified) {
-        return res.status(401).json({ error: 'Invalid 2FA code' });
-      }
+    const tokens = await generateTokens(user.id, req);
+    const { password_hash, ...safeUser } = user;
+    res.json({ user: safeUser, ...tokens });
+  } catch (err) {
+    logger.error('Login error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/refresh', async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(401).json({ error: 'No refresh token' });
+
+  try {
+    const payload = jwt.verify(refreshToken, config.jwtRefreshSecret);
+    const session = await query('SELECT user_id FROM sessions WHERE token = $1', [refreshToken]);
+    if (!session.rows.length) {
+      return res.status(401).json({ error: 'Invalid refresh token' });
     }
-
-    const deviceId = generateId();
-    const userAgent = req.headers['user-agent'] || 'unknown';
-    const ip = req.ip || req.connection.remoteAddress;
-
-    await query(
-      `INSERT INTO devices (id, user_id, name, ip, user_agent, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [deviceId, user.id, userAgent, ip, userAgent]
-    );
-
-    const token = jwt.sign(
-      { id: user.id, username, deviceId },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresIn }
-    );
-
-    const ttlSeconds = 7 * 24 * 60 * 60;
-    await redis.setEx(`session:${user.id}:${deviceId}`, ttlSeconds, '1');
-    await redis.sAdd(`user:${user.id}:devices`, deviceId);
-
-    logger.info(`User logged in: ${username} (${user.id}) from device ${deviceId}`);
-    res.json({
-      token,
-      user: {
-        id: user.id,
-        username,
-        avatar: user.avatar,
-        bio: user.bio,
-        status: user.status
-      }
-    });
+    const newTokens = await generateTokens(payload.userId, req, refreshToken);
+    res.json(newTokens);
   } catch (err) {
-    logger.error('Login error:', err);
-    res.status(500).json({ error: 'Login failed' });
+    logger.error('Refresh error', err);
+    return res.status(401).json({ error: 'Invalid refresh token' });
   }
 });
 
-// ==================== ВКЛЮЧЕНИЕ 2FA ====================
-router.post('/2fa/enable', authenticateToken, async (req, res) => {
-  try {
-    const secret = speakeasy.generateSecret({
-      length: 20,
-      name: `${config.appName}:${req.user.username}`
-    });
+router.post('/logout', require('./authMiddleware'), async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader.split(' ')[1];
+  await query('DELETE FROM sessions WHERE token = $1', [token]);
+  res.json({ success: true });
+});
 
-    await query('UPDATE users SET totp_secret = $1 WHERE id = $2', [secret.base32, req.user.id]);
+router.post('/logout-all', require('./authMiddleware'), async (req, res) => {
+  await query('DELETE FROM sessions WHERE user_id = $1', [req.userId]);
+  res.json({ success: true });
+});
 
-    const qrUrl = await QRCode.toDataURL(secret.otpauth_url);
-    res.json({ secret: secret.base32, qrCode: qrUrl });
-  } catch (err) {
-    logger.error('2FA enable error:', err);
-    res.status(500).json({ error: 'Failed to enable 2FA' });
+async function generateTokens(userId, req, oldToken = null) {
+  const accessToken = jwt.sign({ userId }, config.jwtSecret, { expiresIn: config.jwtAccessExpiry });
+  const refreshToken = jwt.sign({ userId }, config.jwtRefreshSecret, { expiresIn: config.jwtRefreshExpiry });
+
+  const deviceInfo = {
+    userAgent: req.headers['user-agent'],
+    ip: req.ip,
+  };
+  await query(
+    'INSERT INTO sessions (user_id, token, device_info, ip) VALUES ($1, $2, $3, $4)',
+    [userId, refreshToken, deviceInfo, req.ip]
+  );
+
+  if (oldToken) {
+    await query('DELETE FROM sessions WHERE token = $1', [oldToken]);
   }
-});
 
-// ==================== ОТКЛЮЧЕНИЕ 2FA ====================
-router.post('/2fa/disable', authenticateToken, async (req, res) => {
-  try {
-    await query('UPDATE users SET totp_secret = NULL WHERE id = $1', [req.user.id]);
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('2FA disable error:', err);
-    res.status(500).json({ error: 'Failed to disable 2FA' });
-  }
-});
-
-// ==================== ВЫХОД (удаление сессии) ====================
-router.post('/logout', authenticateToken, async (req, res) => {
-  try {
-    await redis.del(`session:${req.user.id}:${req.user.deviceId}`);
-    await redis.sRem(`user:${req.user.id}:devices`, req.user.deviceId);
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Logout error:', err);
-    res.status(500).json({ error: 'Logout failed' });
-  }
-});
-
-// ==================== ПОЛУЧЕНИЕ СПИСКА УСТРОЙСТВ ====================
-router.get('/devices', authenticateToken, async (req, res) => {
-  try {
-    const devices = await query(`
-      SELECT id, name, ip, user_agent, created_at
-      FROM devices
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-    `, [req.user.id]);
-
-    const devicesWithStatus = await Promise.all(devices.rows.map(async (device) => {
-      const online = await redis.exists(`online:${req.user.id}:${device.id}`);
-      return {
-        ...device,
-        online: online === 1
-      };
-    }));
-
-    res.json(devicesWithStatus);
-  } catch (err) {
-    logger.error('Fetch devices error:', err);
-    res.status(500).json({ error: 'Failed to fetch devices' });
-  }
-});
-
-// ==================== УДАЛЕНИЕ УСТРОЙСТВА (завершение сессии) ====================
-router.delete('/devices/:deviceId', authenticateToken, async (req, res) => {
-  const { deviceId } = req.params;
-  try {
-    if (deviceId === req.user.deviceId) {
-      return res.status(400).json({ error: 'Cannot delete current device' });
-    }
-
-    await query('DELETE FROM devices WHERE id = $1 AND user_id = $2', [deviceId, req.user.id]);
-    await redis.del(`session:${req.user.id}:${deviceId}`);
-    await redis.sRem(`user:${req.user.id}:devices`, deviceId);
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Delete device error:', err);
-    res.status(500).json({ error: 'Failed to remove device' });
-  }
-});
-
-// ==================== ПРОВЕРКА ТОКЕНА ====================
-router.get('/verify', authenticateToken, (req, res) => {
-  res.json({ 
-    valid: true, 
-    user: {
-      id: req.user.id,
-      username: req.user.username
-    }
-  });
-});
+  return { accessToken, refreshToken };
+}
 
 module.exports = router;
