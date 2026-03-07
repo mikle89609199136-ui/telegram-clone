@@ -1,19 +1,29 @@
 module.exports = {
-  apps: [{
-    name: 'craneapp-messenger',
-    script: 'index.js',
-    instances: 'max',
-    exec_mode: 'cluster',
-    watch: false,
-    env: {
-      NODE_ENV: 'production',
+  apps: [
+    {
+      name: 'craheapp-api',
+      script: 'server.js',
+      env: { SERVICE: 'api', NODE_ENV: 'production' },
+      instances: 'max',
+      exec_mode: 'cluster',
     },
-    env_production: {
-      NODE_ENV: 'production',
+    {
+      name: 'craheapp-ws',
+      script: 'server.js',
+      env: { SERVICE: 'ws', NODE_ENV: 'production' },
+      instances: 2,
     },
-    error_file: 'logs/err.log',
-    out_file: 'logs/out.log',
-    log_file: 'logs/combined.log',
-    time: true,
-  }],
+    {
+      name: 'craheapp-media',
+      script: 'server.js',
+      env: { SERVICE: 'media', NODE_ENV: 'production' },
+      instances: 1,
+    },
+    {
+      name: 'craheapp-ai',
+      script: 'server.js',
+      env: { SERVICE: 'ai', NODE_ENV: 'production' },
+      instances: 1,
+    },
+  ],
 };
