@@ -1,5 +1,10 @@
 node_modules/
 .env
 uploads/
-data.json
+logs/
+*.log
 .DS_Store
+coverage/
+.nyc_output/
+dist/
+build/
