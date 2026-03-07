@@ -1,172 +1,87 @@
 const express = require('express');
-const router = express.Router();
-const { query } = require('./data');
-const { redis } = require('./database');
+const { query } = require('./database');
 const logger = require('./logger');
+const router = express.Router();
 
-// ==================== ПОЛУЧЕНИЕ СПИСКА КОНТАКТОВ ====================
 router.get('/', async (req, res) => {
+  const userId = req.userId;
   try {
-    const contacts = await query(`
-      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, c.name as custom_name,
-        (SELECT COUNT(*) > 0 FROM devices d 
-         WHERE d.user_id = u.id 
-           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
-      FROM contacts c
-      JOIN users u ON u.id = c.contact_id
-      WHERE c.user_id = $1
-      ORDER BY u.username
-    `, [req.user.id]);
-
-    res.json(contacts.rows);
+    const result = await query(
+      `SELECT u.id, u.uid, u.username, u.avatar, u.bio, u.online, u.last_seen
+       FROM contacts c JOIN users u ON c.contact_id = u.id
+       WHERE c.user_id = $1
+       ORDER BY u.username`,
+      [userId]
+    );
+    res.json(result.rows);
   } catch (err) {
-    logger.error('Error fetching contacts:', err);
-    res.status(500).json({ error: 'Failed to fetch contacts' });
+    logger.error('Get contacts error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ДОБАВЛЕНИЕ КОНТАКТА ====================
-router.post('/', async (req, res) => {
-  const { contactId, name } = req.body;
-  
-  if (!contactId) {
-    return res.status(400).json({ error: 'contactId required' });
-  }
-
-  try {
-    // Проверяем, что пользователь с таким ID существует
-    const user = await query('SELECT id FROM users WHERE id = $1', [contactId]);
-    if (user.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Нельзя добавить самого себя
-    if (contactId === req.user.id) {
-      return res.status(400).json({ error: 'Cannot add yourself as contact' });
-    }
-
-    await query(`
-      INSERT INTO contacts (user_id, contact_id, name, created_at)
-      VALUES ($1, $2, $3, NOW())
-      ON CONFLICT (user_id, contact_id) DO NOTHING
-    `, [req.user.id, contactId, name || null]);
-
-    // Получаем информацию о добавленном контакте
-    const contactInfo = await query(`
-      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, c.name as custom_name,
-        (SELECT COUNT(*) > 0 FROM devices d 
-         WHERE d.user_id = u.id 
-           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
-      FROM contacts c
-      JOIN users u ON u.id = c.contact_id
-      WHERE c.user_id = $1 AND c.contact_id = $2
-    `, [req.user.id, contactId]);
-
-    res.status(201).json(contactInfo.rows[0] || { success: true });
-  } catch (err) {
-    logger.error('Error adding contact:', err);
-    res.status(500).json({ error: 'Failed to add contact' });
-  }
-});
-
-// ==================== УДАЛЕНИЕ КОНТАКТА ====================
-router.delete('/:contactId', async (req, res) => {
-  const { contactId } = req.params;
-
-  try {
-    await query('DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2', [req.user.id, contactId]);
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Error deleting contact:', err);
-    res.status(500).json({ error: 'Failed to delete contact' });
-  }
-});
-
-// ==================== ПОИСК ПОЛЬЗОВАТЕЛЕЙ ДЛЯ ДОБАВЛЕНИЯ В КОНТАКТЫ ====================
-router.get('/search/:query', async (req, res) => {
-  const { query: searchQuery } = req.params;
-  if (searchQuery.length < 2) {
-    return res.json([]);
-  }
-
-  try {
-    // Ищем пользователей, которых ещё нет в контактах, и не самого себя
-    const users = await query(`
-      SELECT u.id, u.username, u.avatar, u.status,
-        (SELECT COUNT(*) > 0 FROM devices d 
-         WHERE d.user_id = u.id 
-           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
-      FROM users u
-      WHERE u.username ILIKE $1
-        AND u.id != $2
-        AND NOT EXISTS (
-          SELECT 1 FROM contacts c
-          WHERE c.user_id = $2 AND c.contact_id = u.id
-        )
-      LIMIT 20
-    `, [`%${searchQuery}%`, req.user.id]);
-
-    res.json(users.rows);
-  } catch (err) {
-    logger.error('Error searching users for contacts:', err);
-    res.status(500).json({ error: 'Search failed' });
-  }
-});
-
-// ==================== ПОЛУЧЕНИЕ КОНТАКТА ПО ID ====================
-router.get('/:contactId', async (req, res) => {
-  const { contactId } = req.params;
-
-  try {
-    const contact = await query(`
-      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, u.bio, c.name as custom_name,
-        (SELECT COUNT(*) > 0 FROM devices d 
-         WHERE d.user_id = u.id 
-           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
-      FROM contacts c
-      JOIN users u ON u.id = c.contact_id
-      WHERE c.user_id = $1 AND c.contact_id = $2
-    `, [req.user.id, contactId]);
-
-    if (contact.rows.length === 0) {
-      return res.status(404).json({ error: 'Contact not found' });
-    }
-
-    res.json(contact.rows[0]);
-  } catch (err) {
-    logger.error('Error fetching contact:', err);
-    res.status(500).json({ error: 'Failed to fetch contact' });
-  }
-});
-
-// ==================== ОБНОВЛЕНИЕ ИМЕНИ КОНТАКТА (пользовательское имя) ====================
-router.put('/:contactId', async (req, res) => {
-  const { contactId } = req.params;
-  const { name } = req.body;
+router.post('/add', async (req, res) => {
+  const userId = req.userId;
+  const { contactId } = req.body;
+  if (!contactId) return res.status(400).json({ error: 'contactId required' });
+  if (userId === contactId) return res.status(400).json({ error: 'Cannot add yourself' });
 
   try {
     await query(
-      'UPDATE contacts SET name = $1 WHERE user_id = $2 AND contact_id = $3',
-      [name || null, req.user.id, contactId]
+      'INSERT INTO contacts (user_id, contact_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [userId, contactId]
     );
     res.json({ success: true });
   } catch (err) {
-    logger.error('Error updating contact:', err);
-    res.status(500).json({ error: 'Failed to update contact' });
+    logger.error('Add contact error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ИМПОРТ КОНТАКТОВ (из телефонной книги - заглушка) ====================
-router.post('/import', async (req, res) => {
-  const { phoneNumbers } = req.body; // массив телефонных номеров
+router.delete('/:contactId', async (req, res) => {
+  const userId = req.userId;
+  const contactId = parseInt(req.params.contactId);
+  if (isNaN(contactId)) return res.status(400).json({ error: 'Invalid contact ID' });
 
   try {
-    // Здесь можно реализовать поиск пользователей по телефону
-    // Пока просто возвращаем успех
-    res.json({ success: true, imported: 0 });
+    await query('DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2', [userId, contactId]);
+    res.json({ success: true });
   } catch (err) {
-    logger.error('Error importing contacts:', err);
-    res.status(500).json({ error: 'Failed to import contacts' });
+    logger.error('Remove contact error', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+router.post('/block', async (req, res) => {
+  const userId = req.userId;
+  const { blockedId } = req.body;
+  if (!blockedId) return res.status(400).json({ error: 'blockedId required' });
+  if (userId === blockedId) return res.status(400).json({ error: 'Cannot block yourself' });
+
+  try {
+    await query(
+      'INSERT INTO blocked_users (user_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [userId, blockedId]
+    );
+    await query('DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2', [userId, blockedId]);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Block user error', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+router.delete('/unblock/:blockedId', async (req, res) => {
+  const userId = req.userId;
+  const blockedId = parseInt(req.params.blockedId);
+  if (isNaN(blockedId)) return res.status(400).json({ error: 'Invalid blocked ID' });
+
+  try {
+    await query('DELETE FROM blocked_users WHERE user_id = $1 AND blocked_id = $2', [userId, blockedId]);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Unblock user error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
