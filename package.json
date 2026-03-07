@@ -6,8 +6,11 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "migrate": "node scripts/migrate.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "migrate": "node migrate.js",
+    "migrate:force": "node migrate.js --force",
+    "backup": "node migrate.js --backup",
+    "lint": "eslint .",
+    "format": "prettier --write ."
   },
   "engines": {
     "node": ">=18.0.0"
@@ -35,9 +38,12 @@
     "winston": "^3.11.0",
     "web-push": "^3.6.0",
     "express-validator": "^7.0.1",
-    "sanitize-html": "^2.11.0"
+    "sanitize-html": "^2.11.0",
+    "minimist": "^1.2.8"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.2",
+    "eslint": "^8.56.0",
+    "prettier": "^3.1.1"
   }
 }
