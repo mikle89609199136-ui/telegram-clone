@@ -1,5 +1,3 @@
-// authMiddleware.js – проверка JWT и сессии в Redis
-
 const jwt = require('jsonwebtoken');
 const { redis } = require('./database');
 const config = require('./config');
