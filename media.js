@@ -30,8 +30,12 @@ const upload = multer({
     const allowed = [
       'image/jpeg', 'image/png', 'image/gif', 'image/webp',
       'video/mp4', 'video/webm', 'video/ogg',
-      'audio/mpeg', 'audio/ogg', 'audio/wav',
-      'application/pdf', 'application/zip', 'text/plain'
+      'audio/mpeg', 'audio/ogg', 'audio/wav', 'audio/mp3',
+      'application/pdf', 'application/zip', 'application/x-zip-compressed',
+      'text/plain', 'application/msword', 
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     ];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
@@ -50,15 +54,23 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     let processedPath = req.file.path;
     let thumbnailPath = null;
+    let dimensions = null;
 
     // Оптимизация и создание миниатюры для изображений
     if (req.file.mimetype.startsWith('image/')) {
-      const outputPath = path.join(path.dirname(req.file.path), `opt-${req.file.filename}`);
-      await sharp(req.file.path)
-        .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toFile(outputPath);
-      processedPath = outputPath;
+      const image = sharp(req.file.path);
+      const metadata = await image.metadata();
+      dimensions = { width: metadata.width, height: metadata.height };
+      
+      // Оптимизация для больших изображений
+      if (metadata.width > 1920 || metadata.height > 1080) {
+        const outputPath = path.join(path.dirname(req.file.path), `opt-${req.file.filename}`);
+        await image
+          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toFile(outputPath);
+        processedPath = outputPath;
+      }
 
       // Создаём миниатюру
       const thumbPath = path.join(path.dirname(req.file.path), `thumb-${req.file.filename}.jpg`);
@@ -68,11 +80,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         .toFile(thumbPath);
       thumbnailPath = thumbPath;
     }
+    
+    // Получаем длительность для видео/аудио (можно добавить позже с помощью ffmpeg)
 
     const fileId = generateId();
     await query(`
-      INSERT INTO files (id, user_id, filename, path, mime_type, size, thumbnail, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      INSERT INTO files (id, user_id, filename, path, mime_type, size, thumbnail, dimensions, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
     `, [
       fileId,
       req.user.id,
@@ -80,7 +94,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       processedPath,
       req.file.mimetype,
       req.file.size,
-      thumbnailPath
+      thumbnailPath,
+      dimensions ? JSON.stringify(dimensions) : null
     ]);
 
     res.json({
@@ -89,7 +104,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       thumbnail: thumbnailPath ? `/uploads/${path.basename(thumbnailPath)}` : null,
       filename: req.file.originalname,
       mimeType: req.file.mimetype,
-      size: req.file.size
+      size: req.file.size,
+      dimensions
     });
   } catch (err) {
     logger.error('File upload error:', err);
@@ -99,15 +115,25 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
 // ==================== ПОЛУЧЕНИЕ СПИСКА ФАЙЛОВ ПОЛЬЗОВАТЕЛЯ ====================
 router.get('/my', async (req, res) => {
+  const { type = 'all', limit = 50, offset = 0 } = req.query;
+  
   try {
-    const files = await query(`
-      SELECT id, filename, path, mime_type, size, thumbnail, created_at
+    let sql = `
+      SELECT id, filename, path, mime_type, size, thumbnail, dimensions, created_at
       FROM files
       WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT 100
-    `, [req.user.id]);
-
+    `;
+    const params = [req.user.id];
+    
+    if (type !== 'all') {
+      sql += ` AND mime_type LIKE $2`;
+      params.push(`${type}%`);
+    }
+    
+    sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    const files = await query(sql, params);
     res.json(files.rows);
   } catch (err) {
     logger.error('Error fetching user files:', err);
@@ -118,7 +144,7 @@ router.get('/my', async (req, res) => {
 // ==================== ПОЛУЧЕНИЕ МЕДИАФАЙЛОВ ИЗ ЧАТА (ГАЛЕРЕЯ) ====================
 router.get('/chat/:chatId', async (req, res) => {
   const { chatId } = req.params;
-  const { type = 'all' } = req.query; // 'image', 'video', 'file', 'link', 'voice'
+  const { type = 'all', limit = 50, offset = 0 } = req.query;
 
   try {
     // Проверка доступа к чату
@@ -138,16 +164,16 @@ router.get('/chat/:chatId', async (req, res) => {
     `;
     const params = [chatId];
 
-    if (type === 'image' || type === 'video' || type === 'file') {
+    if (type === 'image' || type === 'video' || type === 'file' || type === 'audio') {
       sql += ` AND m.type = $2`;
       params.push(type);
     } else if (type === 'link') {
       sql += ` AND m.content LIKE '%http%'`;
-    } else if (type === 'voice') {
-      sql += ` AND m.type = 'voice'`;
     }
 
-    sql += ` ORDER BY m.created_at DESC LIMIT 100`;
+    sql += ` ORDER BY m.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(parseInt(limit), parseInt(offset));
+
     const result = await query(sql, params);
     res.json(result.rows);
   } catch (err) {
@@ -208,6 +234,31 @@ router.get('/file/:fileId/download', async (req, res) => {
   }
 });
 
+// ==================== ПОЛУЧЕНИЕ МИНИАТЮРЫ ФАЙЛА ====================
+router.get('/file/:fileId/thumbnail', async (req, res) => {
+  const { fileId } = req.params;
+
+  try {
+    const fileRes = await query('SELECT thumbnail FROM files WHERE id = $1', [fileId]);
+    if (fileRes.rows.length === 0 || !fileRes.rows[0].thumbnail) {
+      return res.status(404).json({ error: 'Thumbnail not found' });
+    }
+
+    const thumbPath = path.join(__dirname, config.upload.dir, path.basename(fileRes.rows[0].thumbnail));
+    
+    try {
+      await fs.access(thumbPath);
+    } catch {
+      return res.status(404).json({ error: 'Thumbnail not found on disk' });
+    }
+
+    res.sendFile(thumbPath);
+  } catch (err) {
+    logger.error('Error serving thumbnail:', err);
+    res.status(500).json({ error: 'Failed to get thumbnail' });
+  }
+});
+
 // ==================== УДАЛЕНИЕ ФАЙЛА (только владелец) ====================
 router.delete('/file/:fileId', async (req, res) => {
   const { fileId } = req.params;
@@ -235,6 +286,23 @@ router.delete('/file/:fileId', async (req, res) => {
   } catch (err) {
     logger.error('Error deleting file:', err);
     res.status(500).json({ error: 'Failed to delete file' });
+  }
+});
+
+// ==================== ПОЛУЧЕНИЕ ИНФОРМАЦИИ О ФАЙЛЕ ====================
+router.get('/file/:fileId/info', async (req, res) => {
+  const { fileId } = req.params;
+
+  try {
+    const fileRes = await query('SELECT id, filename, mime_type, size, dimensions, created_at FROM files WHERE id = $1', [fileId]);
+    if (fileRes.rows.length === 0) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    res.json(fileRes.rows[0]);
+  } catch (err) {
+    logger.error('Error fetching file info:', err);
+    res.status(500).json({ error: 'Failed to fetch file info' });
   }
 });
 
