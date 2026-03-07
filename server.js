@@ -1,3 +1,5 @@
+// server.js – конфигурация Express и middleware
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -27,11 +29,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self", "'unsafe-inline'", "https://cdn.socket.io"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https://i.ibb.co", "blob:"],
       connectSrc: ["'self'", "wss:", "https://cdn.socket.io"],
       mediaSrc: ["'self'", "blob:"],
+      fontSrc: ["'self'", "https://fonts.googleapis.com"],
     }
   }
 }));
