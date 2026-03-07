@@ -1,35 +1,46 @@
 const jwt = require('jsonwebtoken');
-const { redis } = require('./database');
 const config = require('./config');
-const logger = require('./logger');
+const { query } = require('./database');
 
-/**
- * Middleware для аутентификации запросов по JWT.
- * Добавляет req.user = { id, username, deviceId }
- */
-function authenticateToken(req, res, next) {
+async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: no token provided' });
-  }
+  if (!authHeader) return res.status(401).json({ error: 'No token provided' });
 
-  jwt.verify(token, config.jwt.secret, async (err, user) => {
-    if (err) {
-      logger.warn('JWT verification failed:', err.message);
-      return res.status(403).json({ error: 'Forbidden: invalid token' });
-    }
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Invalid token format' });
 
-    // Проверяем, что сессия ещё активна в Redis
-    const sessionKey = `session:${user.id}:${user.deviceId}`;
-    const sessionValid = await redis.get(sessionKey);
-    if (!sessionValid) {
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    const session = await query('SELECT user_id FROM sessions WHERE token = $1', [token]);
+    if (!session.rows.length) {
       return res.status(401).json({ error: 'Session expired' });
     }
-
-    req.user = user;
+    req.userId = decoded.userId;
     next();
-  });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
-module.exports = authenticateToken;
+async function socketAuth(socket, next) {
+  const token = socket.handshake.auth.token;
+  if (!token) return next(new Error('Authentication error'));
+
+  try {
+    const decoded = jwt.verify(token, config.jwtSecret);
+    const session = await query('SELECT user_id FROM sessions WHERE token = $1', [token]);
+    if (!session.rows.length) {
+      return next(new Error('Session expired'));
+    }
+    socket.userId = decoded.userId;
+    next();
+  } catch (err) {
+    next(new Error('Authentication error'));
+  }
+}
+
+module.exports = authMiddleware;
+module.exports.socketAuth = socketAuth;
