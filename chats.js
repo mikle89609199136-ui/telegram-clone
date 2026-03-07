@@ -1,508 +1,202 @@
 const express = require('express');
-const router = express.Router();
-const { query, transaction } = require('./data');
+const { query, transaction } = require('./database');
 const { generateId } = require('./utils');
 const logger = require('./logger');
-const { ROLES, checkPermission, PERMISSIONS } = require('./security');
+const router = express.Router();
 
-// ==================== ПОЛУЧЕНИЕ ВСЕХ ЧАТОВ ПОЛЬЗОВАТЕЛЯ ====================
 router.get('/', async (req, res) => {
+  const userId = req.userId;
   try {
-    const result = await query(`
-      SELECT c.*,
-        (SELECT json_agg(json_build_object('id', u.id, 'username', u.username, 'avatar', u.avatar, 'role', cm.role))
-         FROM chat_members cm
-         JOIN users u ON u.id = cm.user_id
-         WHERE cm.chat_id = c.id) as participants,
-        (SELECT row_to_json(m) FROM messages m WHERE m.chat_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message,
-        (SELECT COUNT(*) FROM messages WHERE chat_id = c.id AND read = false AND sender_id != $1) as unread_count
-      FROM chats c
-      JOIN chat_members cm ON cm.chat_id = c.id
-      WHERE cm.user_id = $1
-      ORDER BY (SELECT created_at FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) DESC NULLS LAST
-    `, [req.user.id]);
-
-    // Добавляем информацию о непрочитанных сообщениях и форматируем
-    const chatsWithInfo = await Promise.all(result.rows.map(async (chat) => {
-      // Получаем онлайн-статус участников (для личных чатов)
-      let onlineStatus = null;
-      if (chat.type === 'private' && chat.participants) {
-        const otherParticipant = chat.participants.find(p => p.id !== req.user.id);
-        if (otherParticipant) {
-          const devices = await require('./database').redis.sMembers(`user:${otherParticipant.id}:devices`);
-          let online = false;
-          for (const dev of devices) {
-            if (await require('./database').redis.exists(`online:${otherParticipant.id}:${dev}`)) {
-              online = true;
-              break;
-            }
-          }
-          onlineStatus = online ? 'online' : 'offline';
-        }
-      }
-
-      return {
-        ...chat,
-        onlineStatus,
-        last_message: chat.last_message ? {
-          ...chat.last_message,
-          formattedTime: require('./utils').formatRelativeTime(chat.last_message.created_at)
-        } : null
-      };
-    }));
-
-    res.json(chatsWithInfo);
-  } catch (err) {
-    logger.error('Error fetching chats:', err);
-    res.status(500).json({ error: 'Failed to fetch chats' });
-  }
-});
-
-// ==================== СОЗДАНИЕ НОВОГО ЧАТА (личный или группа) ====================
-router.post('/', async (req, res) => {
-  const { type, name, description, memberIds } = req.body; // type: 'private' или 'group'
-  
-  if (!['private', 'group'].includes(type)) {
-    return res.status(400).json({ error: 'Invalid chat type' });
-  }
-
-  if (type === 'private' && (!memberIds || memberIds.length !== 1)) {
-    return res.status(400).json({ error: 'Private chat requires exactly one other member' });
-  }
-
-  if (type === 'group' && (!name || name.length < 3)) {
-    return res.status(400).json({ error: 'Group name must be at least 3 characters' });
-  }
-
-  const client = await query.pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const chatId = generateId();
-    
-    // Для личного чата проверяем, не существует ли уже такой чат
-    if (type === 'private') {
-      const existingChat = await client.query(`
-        SELECT c.id FROM chats c
-        JOIN chat_members cm1 ON cm1.chat_id = c.id
-        JOIN chat_members cm2 ON cm2.chat_id = c.id
-        WHERE c.type = 'private' 
-          AND cm1.user_id = $1 
-          AND cm2.user_id = $2
-      `, [req.user.id, memberIds[0]]);
-      
-      if (existingChat.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'Private chat already exists', chatId: existingChat.rows[0].id });
-      }
-    }
-
-    await client.query(`
-      INSERT INTO chats (id, type, name, description, owner_id, created_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
-    `, [chatId, type, name || null, description || null, req.user.id]);
-
-    // Добавляем создателя как OWNER
-    await client.query(`
-      INSERT INTO chat_members (chat_id, user_id, role, joined_at)
-      VALUES ($1, $2, $3, NOW())
-    `, [chatId, req.user.id, ROLES.OWNER]);
-
-    if (type === 'private') {
-      // Добавляем второго участника
-      await client.query(`
-        INSERT INTO chat_members (chat_id, user_id, role, joined_at)
-        VALUES ($1, $2, $3, NOW())
-      `, [chatId, memberIds[0], ROLES.MEMBER]);
-    } else if (type === 'group') {
-      // Добавляем переданных участников (если есть)
-      if (memberIds && memberIds.length > 0) {
-        for (const uid of memberIds) {
-          if (uid !== req.user.id) {
-            await client.query(`
-              INSERT INTO chat_members (chat_id, user_id, role, joined_at)
-              VALUES ($1, $2, $3, NOW())
-            `, [chatId, uid, ROLES.MEMBER]);
-          }
-        }
-      }
-    }
-
-    await client.query('COMMIT');
-    
-    // Получаем созданный чат для ответа
-    const newChat = await query(`
-      SELECT c.*,
-        (SELECT json_agg(json_build_object('id', u.id, 'username', u.username, 'avatar', u.avatar, 'role', cm.role))
-         FROM chat_members cm
-         JOIN users u ON u.id = cm.user_id
-         WHERE cm.chat_id = c.id) as participants
-      FROM chats c
-      WHERE c.id = $1
-    `, [chatId]);
-
-    res.status(201).json(newChat.rows[0]);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    logger.error('Error creating chat:', err);
-    res.status(500).json({ error: 'Failed to create chat' });
-  } finally {
-    client.release();
-  }
-});
-
-// ==================== ПОЛУЧЕНИЕ ИНФОРМАЦИИ О ЧАТЕ ====================
-router.get('/:chatId', async (req, res) => {
-  const { chatId } = req.params;
-
-  try {
-    // Проверяем членство
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
+    const result = await query(
+      `SELECT c.id, c.uid, c.type, c.title, c.avatar, c.created_at,
+        (SELECT json_agg(json_build_object('id', u.id, 'username', u.username, 'avatar', u.avatar))
+         FROM chat_members cm2 JOIN users u ON cm2.user_id = u.id WHERE cm2.chat_id = c.id) as participants,
+        cm.muted_until, cm.archived, cm.pinned,
+        (SELECT row_to_json(msg) FROM (
+           SELECT m.id, m.uid, m.type, m.content as text, m.media, m.created_at,
+                  u.id as sender_id, u.username as sender_username, u.avatar as sender_avatar
+           FROM messages m LEFT JOIN users u ON m.sender_id = u.id
+           WHERE m.chat_id = c.id AND m.deleted = false
+           ORDER BY m.created_at DESC LIMIT 1
+         ) msg) as last_message
+       FROM chats c
+       JOIN chat_members cm ON c.id = cm.chat_id
+       WHERE cm.user_id = $1
+       ORDER BY cm.pinned DESC, last_message.created_at DESC NULLS LAST`,
+      [userId]
     );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const chat = await query('SELECT * FROM chats WHERE id = $1', [chatId]);
-    if (chat.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-
-    const members = await query(`
-      SELECT u.id, u.username, u.avatar, cm.role, cm.joined_at,
-        (SELECT COUNT(*) > 0 FROM devices d 
-         WHERE d.user_id = u.id 
-           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
-      FROM chat_members cm
-      JOIN users u ON u.id = cm.user_id
-      WHERE cm.chat_id = $1
-      ORDER BY 
-        CASE 
-          WHEN cm.role = 'owner' THEN 1
-          WHEN cm.role = 'admin' THEN 2
-          WHEN cm.role = 'moderator' THEN 3
-          ELSE 4
-        END,
-        cm.joined_at ASC
-    `, [chatId]);
-
-    res.json({ ...chat.rows[0], members: members.rows });
+    res.json(result.rows);
   } catch (err) {
-    logger.error('Error fetching chat info:', err);
-    res.status(500).json({ error: 'Failed to fetch chat info' });
+    logger.error('Get chats error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ПОЛУЧЕНИЕ РОЛИ ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ В ЧАТЕ ====================
-router.get('/:chatId/myrole', async (req, res) => {
-  const { chatId } = req.params;
+router.post('/create/private', async (req, res) => {
+  const userId = req.userId;
+  const { participantId } = req.body;
+  if (!participantId) return res.status(400).json({ error: 'participantId required' });
 
-  try {
-    const roleRes = await query(
-      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
-    );
-    if (roleRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Not a member' });
-    }
-    res.json({ role: roleRes.rows[0].role });
-  } catch (err) {
-    logger.error('Error fetching role:', err);
-    res.status(500).json({ error: 'Failed to fetch role' });
+  if (userId === participantId) {
+    return res.status(400).json({ error: 'Cannot create chat with yourself' });
   }
-});
-
-// ==================== ДОБАВЛЕНИЕ УЧАСТНИКА В ГРУППУ ====================
-router.post('/:chatId/members', async (req, res) => {
-  const { chatId } = req.params;
-  const { userId } = req.body;
 
   try {
-    // Проверка, что чат существует и это группа
-    const chatType = await query('SELECT type FROM chats WHERE id = $1', [chatId]);
-    if (chatType.rows.length === 0) {
-      return res.status(404).json({ error: 'Chat not found' });
-    }
-    if (chatType.rows[0].type !== 'group') {
-      return res.status(400).json({ error: 'Can only add members to groups' });
-    }
-
-    // Проверка прав (нужна роль admin или owner)
-    const actorRoleRes = await query(
-      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
+    // Check if private chat already exists
+    const existing = await query(
+      `SELECT c.id FROM chats c
+       JOIN chat_members cm1 ON c.id = cm1.chat_id
+       JOIN chat_members cm2 ON c.id = cm2.chat_id
+       WHERE c.type = 'private' AND cm1.user_id = $1 AND cm2.user_id = $2`,
+      [userId, participantId]
     );
-    const actorRole = actorRoleRes.rows[0]?.role;
-    if (!['owner', 'admin'].includes(actorRole)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    if (existing.rows.length) {
+      return res.json({ chatId: existing.rows[0].id });
     }
 
-    // Добавляем участника
+    // Create new private chat
+    const chatUid = generateId();
+    const chatResult = await query(
+      'INSERT INTO chats (uid, type) VALUES ($1, $2) RETURNING id',
+      [chatUid, 'private']
+    );
+    const chatId = chatResult.rows[0].id;
+
+    // Add members
     await query(
-      'INSERT INTO chat_members (chat_id, user_id, role, joined_at) VALUES ($1, $2, $3, NOW())',
-      [chatId, userId, ROLES.MEMBER]
+      'INSERT INTO chat_members (chat_id, user_id, role) VALUES ($1, $2, $3), ($1, $4, $5)',
+      [chatId, userId, 'member', participantId, 'member']
     );
 
-    // Уведомление через WebSocket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`chat:${chatId}`).emit('memberAdded', { chatId, userId, addedBy: req.user.id });
-    }
-
-    res.json({ success: true });
+    res.status(201).json({ chatId });
   } catch (err) {
-    if (err.code === '23505') { // unique violation
-      return res.status(409).json({ error: 'User already in chat' });
-    }
-    logger.error('Error adding member:', err);
-    res.status(500).json({ error: 'Failed to add member' });
+    logger.error('Create private chat error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== УДАЛЕНИЕ УЧАСТНИКА (КИК) ====================
-router.delete('/:chatId/members/:userId', async (req, res) => {
-  const { chatId, userId } = req.params;
+router.post('/create/group', async (req, res) => {
+  const userId = req.userId;
+  const { title, participantIds } = req.body;
+  if (!title || !participantIds || !Array.isArray(participantIds)) {
+    return res.status(400).json({ error: 'title and participantIds array required' });
+  }
+
+  const members = [userId, ...participantIds.filter(id => id !== userId)];
+  if (members.length < 2) {
+    return res.status(400).json({ error: 'Need at least 2 participants' });
+  }
 
   try {
-    // Проверка прав
-    const actorRoleRes = await query(
-      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
+    const chatUid = generateId();
+    const chatResult = await query(
+      'INSERT INTO chats (uid, type, title, created_by) VALUES ($1, $2, $3, $4) RETURNING id',
+      [chatUid, 'group', title, userId]
     );
-    const actorRole = actorRoleRes.rows[0]?.role;
-    if (!['owner', 'admin'].includes(actorRole)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
+    const chatId = chatResult.rows[0].id;
 
-    // Получаем роль удаляемого
-    const targetRoleRes = await query(
-      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+    // Insert members with role: creator for userId, member for others
+    const values = members.map((uid, index) => `(${chatId}, ${uid}, '${uid === userId ? 'creator' : 'member'}')`).join(',');
+    await query(`INSERT INTO chat_members (chat_id, user_id, role) VALUES ${values}`);
+
+    res.status(201).json({ chatId });
+  } catch (err) {
+    logger.error('Create group error', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+router.post('/create/channel', async (req, res) => {
+  const userId = req.userId;
+  const { title } = req.body;
+  if (!title) return res.status(400).json({ error: 'title required' });
+
+  try {
+    const chatUid = generateId();
+    const chatResult = await query(
+      'INSERT INTO chats (uid, type, title, created_by) VALUES ($1, $2, $3, $4) RETURNING id',
+      [chatUid, 'channel', title, userId]
+    );
+    const chatId = chatResult.rows[0].id;
+
+    await query('INSERT INTO chat_members (chat_id, user_id, role) VALUES ($1, $2, $3)', [chatId, userId, 'creator']);
+
+    res.status(201).json({ chatId });
+  } catch (err) {
+    logger.error('Create channel error', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+router.get('/:chatId', async (req, res) => {
+  const chatId = parseInt(req.params.chatId);
+  const userId = req.userId;
+  if (isNaN(chatId)) return res.status(400).json({ error: 'Invalid chat ID' });
+
+  try {
+    const memberCheck = await query('SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
+    if (!memberCheck.rows.length) return res.status(403).json({ error: 'Not a member' });
+
+    const result = await query(
+      `SELECT c.id, c.uid, c.type, c.title, c.avatar, c.created_at,
+        (SELECT json_agg(json_build_object('id', u.id, 'username', u.username, 'avatar', u.avatar, 'role', cm.role))
+         FROM chat_members cm JOIN users u ON cm.user_id = u.id WHERE cm.chat_id = c.id) as participants,
+        (SELECT privacy_last_seen FROM user_settings WHERE user_id = $2) as my_privacy
+       FROM chats c WHERE c.id = $1`,
       [chatId, userId]
     );
-    const targetRole = targetRoleRes.rows[0]?.role;
-
-    // Проверки
-    if (!targetRole) {
-      return res.status(404).json({ error: 'User not in chat' });
-    }
-    if (targetRole === 'owner') {
-      return res.status(403).json({ error: 'Cannot kick the owner' });
-    }
-    if (targetRole === 'admin' && actorRole !== 'owner') {
-      return res.status(403).json({ error: 'Only owner can kick admins' });
-    }
-
-    await query('DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
-
-    // Уведомление через WebSocket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`chat:${chatId}`).emit('memberRemoved', { chatId, userId, removedBy: req.user.id });
-    }
-
-    res.json({ success: true });
+    res.json(result.rows[0]);
   } catch (err) {
-    logger.error('Error removing member:', err);
-    res.status(500).json({ error: 'Failed to remove member' });
+    logger.error('Get chat error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ПОВЫШЕНИЕ ДО АДМИНА ====================
-router.post('/:chatId/promote', async (req, res) => {
-  const { chatId } = req.params;
-  const { userId } = req.body;
-
+router.post('/:chatId/mute', async (req, res) => {
+  const chatId = parseInt(req.params.chatId);
+  const userId = req.userId;
+  const { until } = req.body;
   try {
-    // Только владелец может повышать
-    const ownerCheck = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2 AND role = $3',
-      [chatId, req.user.id, ROLES.OWNER]
-    );
-    if (ownerCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Only owner can promote' });
-    }
-
     await query(
-      'UPDATE chat_members SET role = $1 WHERE chat_id = $2 AND user_id = $3',
-      [ROLES.ADMIN, chatId, userId]
+      'UPDATE chat_members SET muted_until = $1 WHERE chat_id = $2 AND user_id = $3',
+      [until ? new Date(until) : null, chatId, userId]
     );
-
-    // Уведомление через WebSocket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`chat:${chatId}`).emit('userPromoted', { chatId, userId, newRole: ROLES.ADMIN, promotedBy: req.user.id });
-    }
-
     res.json({ success: true });
   } catch (err) {
-    logger.error('Error promoting user:', err);
-    res.status(500).json({ error: 'Failed to promote user' });
+    logger.error('Mute chat error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ПОНИЖЕНИЕ С АДМИНА ====================
-router.post('/:chatId/demote', async (req, res) => {
-  const { chatId } = req.params;
-  const { userId } = req.body;
-
+router.post('/:chatId/archive', async (req, res) => {
+  const chatId = parseInt(req.params.chatId);
+  const userId = req.userId;
+  const { archive } = req.body;
   try {
-    // Только владелец может понижать
-    const ownerCheck = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2 AND role = $3',
-      [chatId, req.user.id, ROLES.OWNER]
-    );
-    if (ownerCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Only owner can demote' });
-    }
-
     await query(
-      'UPDATE chat_members SET role = $1 WHERE chat_id = $2 AND user_id = $3',
-      [ROLES.MEMBER, chatId, userId]
+      'UPDATE chat_members SET archived = $1 WHERE chat_id = $2 AND user_id = $3',
+      [archive, chatId, userId]
     );
-
-    // Уведомление через WebSocket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`chat:${chatId}`).emit('userDemoted', { chatId, userId, newRole: ROLES.MEMBER, demotedBy: req.user.id });
-    }
-
     res.json({ success: true });
   } catch (err) {
-    logger.error('Error demoting user:', err);
-    res.status(500).json({ error: 'Failed to demote user' });
+    logger.error('Archive chat error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ВЫХОД ИЗ ГРУППЫ (ПОКИНУТЬ ЧАТ) ====================
-router.delete('/:chatId/leave', async (req, res) => {
-  const { chatId } = req.params;
-
+router.post('/:chatId/pin', async (req, res) => {
+  const chatId = parseInt(req.params.chatId);
+  const userId = req.userId;
+  const { pin } = req.body;
   try {
-    const roleRes = await query(
-      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
+    await query(
+      'UPDATE chat_members SET pinned = $1 WHERE chat_id = $2 AND user_id = $3',
+      [pin, chatId, userId]
     );
-    if (roleRes.rows.length === 0) {
-      return res.status(404).json({ error: 'You are not a member' });
-    }
-
-    const role = roleRes.rows[0].role;
-    if (role === 'owner') {
-      // Проверяем, есть ли другие админы для передачи прав
-      const otherAdmins = await query(
-        'SELECT user_id FROM chat_members WHERE chat_id = $1 AND role = $2 AND user_id != $3',
-        [chatId, ROLES.ADMIN, req.user.id]
-      );
-      
-      if (otherAdmins.rows.length > 0) {
-        // Передаём права первому админу
-        await query(
-          'UPDATE chat_members SET role = $1 WHERE chat_id = $2 AND user_id = $3',
-          [ROLES.OWNER, chatId, otherAdmins.rows[0].user_id]
-        );
-      } else {
-        // Если нет админов, удаляем чат
-        await query('DELETE FROM chats WHERE id = $1', [chatId]);
-        res.json({ success: true, chatDeleted: true });
-        return;
-      }
-    }
-
-    await query('DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2', [chatId, req.user.id]);
-
-    // Уведомление через WebSocket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`chat:${chatId}`).emit('memberLeft', { chatId, userId: req.user.id });
-    }
-
     res.json({ success: true });
   } catch (err) {
-    logger.error('Error leaving chat:', err);
-    res.status(500).json({ error: 'Failed to leave chat' });
-  }
-});
-
-// ==================== ПОЛУЧЕНИЕ ЗАКРЕПЛЁННЫХ СООБЩЕНИЙ В ЧАТЕ ====================
-router.get('/:chatId/pinned', async (req, res) => {
-  const { chatId } = req.params;
-
-  try {
-    // Проверка доступа
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
-    );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const pinned = await query(
-      'SELECT * FROM messages WHERE chat_id = $1 AND pinned = true ORDER BY created_at DESC',
-      [chatId]
-    );
-
-    // Добавляем отформатированное время
-    const pinnedWithTime = pinned.rows.map(msg => ({
-      ...msg,
-      formattedTime: require('./utils').formatRelativeTime(msg.created_at)
-    }));
-
-    res.json(pinnedWithTime);
-  } catch (err) {
-    logger.error('Error fetching pinned messages:', err);
-    res.status(500).json({ error: 'Failed to fetch pinned messages' });
-  }
-});
-
-// ==================== ОБНОВЛЕНИЕ ИНФОРМАЦИИ О ЧАТЕ (только для групп/каналов) ====================
-router.put('/:chatId', async (req, res) => {
-  const { chatId } = req.params;
-  const { name, description, avatar } = req.body;
-
-  try {
-    // Проверка прав на редактирование
-    const hasEditPermission = await checkPermission(req.user.id, chatId, PERMISSIONS.EDIT_INFO);
-    if (!hasEditPermission) {
-      return res.status(403).json({ error: 'No permission to edit chat info' });
-    }
-
-    const updates = [];
-    const params = [];
-    let idx = 1;
-
-    if (name) {
-      updates.push(`name = $${idx++}`);
-      params.push(name);
-    }
-    if (description !== undefined) {
-      updates.push(`description = $${idx++}`);
-      params.push(description);
-    }
-    if (avatar !== undefined) {
-      updates.push(`avatar = $${idx++}`);
-      params.push(avatar);
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    params.push(chatId);
-    await query(`UPDATE chats SET ${updates.join(', ')} WHERE id = $${idx}`, params);
-
-    // Уведомление через WebSocket
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`chat:${chatId}`).emit('chatUpdated', { chatId, updates: req.body });
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Error updating chat:', err);
-    res.status(500).json({ error: 'Failed to update chat' });
+    logger.error('Pin chat error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
