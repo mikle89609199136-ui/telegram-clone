@@ -14,10 +14,9 @@ const authenticateToken = require('./authMiddleware');
 
 // ==================== РЕГИСТРАЦИЯ ====================
 router.post('/register', [
-  body('username').isLength({ min: 3, max: 30 }).matches(/^[a-zA-Z0-9_]+$/),
-  body('password').isLength({ min: 8 })
+  body('username').isLength({ min: 3, max: 30 }).matches(/^[a-zA-Z0-9_]+$/).withMessage('Username must be 3-30 characters, alphanumeric or underscore'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
 ], async (req, res) => {
-  // Валидация
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -26,17 +25,14 @@ router.post('/register', [
   const { username, password } = req.body;
 
   try {
-    // Проверяем, не занят ли username
     const existing = await query('SELECT id FROM users WHERE username = $1', [username]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'Username already taken' });
     }
 
-    // Хешируем пароль
     const hashed = await bcrypt.hash(password, 12);
     const userId = generateId();
 
-    // Сохраняем пользователя
     await transaction(async (client) => {
       await client.query(
         'INSERT INTO users (id, username, password, created_at) VALUES ($1, $2, $3, NOW())',
@@ -44,7 +40,6 @@ router.post('/register', [
       );
     });
 
-    // Генерируем JWT (без устройства – первая сессия)
     const token = jwt.sign(
       { id: userId, username },
       config.jwt.secret,
@@ -52,7 +47,16 @@ router.post('/register', [
     );
 
     logger.info(`New user registered: ${username} (${userId})`);
-    res.status(201).json({ token, user: { id: userId, username } });
+    res.status(201).json({ 
+      token, 
+      user: { 
+        id: userId, 
+        username,
+        avatar: null,
+        bio: null,
+        status: 'offline'
+      } 
+    });
   } catch (err) {
     logger.error('Registration error:', err);
     res.status(500).json({ error: 'Registration failed' });
@@ -61,8 +65,8 @@ router.post('/register', [
 
 // ==================== ЛОГИН ====================
 router.post('/login', [
-  body('username').notEmpty(),
-  body('password').notEmpty()
+  body('username').notEmpty().withMessage('Username required'),
+  body('password').notEmpty().withMessage('Password required')
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -72,20 +76,17 @@ router.post('/login', [
   const { username, password, totpCode } = req.body;
 
   try {
-    // Ищем пользователя
     const userRes = await query('SELECT * FROM users WHERE username = $1', [username]);
     if (userRes.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     const user = userRes.rows[0];
 
-    // Проверяем пароль
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // 2FA проверка, если включена
     if (user.totp_secret) {
       if (!totpCode) {
         return res.status(401).json({ error: '2FA code required' });
@@ -101,7 +102,6 @@ router.post('/login', [
       }
     }
 
-    // Сохраняем информацию об устройстве
     const deviceId = generateId();
     const userAgent = req.headers['user-agent'] || 'unknown';
     const ip = req.ip || req.connection.remoteAddress;
@@ -112,15 +112,13 @@ router.post('/login', [
       [deviceId, user.id, userAgent, ip, userAgent]
     );
 
-    // Генерируем JWT с deviceId
     const token = jwt.sign(
       { id: user.id, username, deviceId },
       config.jwt.secret,
       { expiresIn: config.jwt.expiresIn }
     );
 
-    // Сохраняем сессию в Redis (срок жизни = сроку жизни токена)
-    const ttlSeconds = 7 * 24 * 60 * 60; // 7 дней
+    const ttlSeconds = 7 * 24 * 60 * 60;
     await redis.setEx(`session:${user.id}:${deviceId}`, ttlSeconds, '1');
     await redis.sAdd(`user:${user.id}:devices`, deviceId);
 
@@ -192,7 +190,15 @@ router.get('/devices', authenticateToken, async (req, res) => {
       ORDER BY created_at DESC
     `, [req.user.id]);
 
-    res.json(devices.rows);
+    const devicesWithStatus = await Promise.all(devices.rows.map(async (device) => {
+      const online = await redis.exists(`online:${req.user.id}:${device.id}`);
+      return {
+        ...device,
+        online: online === 1
+      };
+    }));
+
+    res.json(devicesWithStatus);
   } catch (err) {
     logger.error('Fetch devices error:', err);
     res.status(500).json({ error: 'Failed to fetch devices' });
@@ -203,9 +209,11 @@ router.get('/devices', authenticateToken, async (req, res) => {
 router.delete('/devices/:deviceId', authenticateToken, async (req, res) => {
   const { deviceId } = req.params;
   try {
-    // Удаляем запись из БД
+    if (deviceId === req.user.deviceId) {
+      return res.status(400).json({ error: 'Cannot delete current device' });
+    }
+
     await query('DELETE FROM devices WHERE id = $1 AND user_id = $2', [deviceId, req.user.id]);
-    // Удаляем сессию из Redis
     await redis.del(`session:${req.user.id}:${deviceId}`);
     await redis.sRem(`user:${req.user.id}:devices`, deviceId);
     res.json({ success: true });
@@ -213,6 +221,17 @@ router.delete('/devices/:deviceId', authenticateToken, async (req, res) => {
     logger.error('Delete device error:', err);
     res.status(500).json({ error: 'Failed to remove device' });
   }
+});
+
+// ==================== ПРОВЕРКА ТОКЕНА ====================
+router.get('/verify', authenticateToken, (req, res) => {
+  res.json({ 
+    valid: true, 
+    user: {
+      id: req.user.id,
+      username: req.user.username
+    }
+  });
 });
 
 module.exports = router;
