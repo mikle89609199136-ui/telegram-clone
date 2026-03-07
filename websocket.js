@@ -1,10 +1,11 @@
 const jwt = require('jsonwebtoken');
-const { redis, pgPool } = require('./database');
+const { redis } = require('./database');
 const { query } = require('./data');
 const logger = require('./logger');
 const config = require('./config');
 const { sendPushNotification } = require('./notifications');
 const { generateId, sanitize } = require('./utils');
+const { checkPermission, PERMISSIONS } = require('./security');
 
 /**
  * Инициализирует Socket.IO сервер
@@ -79,6 +80,12 @@ module.exports = (server) => {
           return callback({ error: 'You are not a member of this chat' });
         }
 
+        // Проверка прав на отправку сообщений
+        const hasSendPermission = await checkPermission(userId, chatId, PERMISSIONS.SEND_MESSAGE);
+        if (!hasSendPermission) {
+          return callback({ error: 'You do not have permission to send messages' });
+        }
+
         // Очистка контента от опасного HTML
         const safeContent = sanitize(content);
 
@@ -91,26 +98,40 @@ module.exports = (server) => {
           VALUES ($1, $2, $3, $4, $5, $6, NOW())
         `, [messageId, chatId, userId, safeContent, type, replyTo]);
 
+        // Получаем информацию об отправителе
+        const senderRes = await query('SELECT avatar FROM users WHERE id = $1', [userId]);
+        const senderAvatar = senderRes.rows[0]?.avatar;
+
         // Формируем объект сообщения для отправки
         const message = {
           id: messageId,
           chatId,
           senderId: userId,
-          sender: { id: userId, username },
+          sender: { 
+            id: userId, 
+            username,
+            avatar: senderAvatar
+          },
           content: safeContent,
           type,
           replyTo,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          read: false,
+          edited: false
         };
 
         // Отправляем всем участникам чата (включая отправителя)
         io.to(`chat:${chatId}`).emit('newMessage', message);
+
+        // Обновляем список чатов у всех (последнее сообщение)
+        io.to(`chat:${chatId}`).emit('chatUpdated', { chatId, lastMessage: message });
 
         // Уведомляем других участников через push (если они не в сети)
         const participants = await query(
           'SELECT user_id FROM chat_members WHERE chat_id = $1 AND user_id != $2',
           [chatId, userId]
         );
+        
         for (const p of participants.rows) {
           // Проверяем, есть ли пользователь онлайн (хотя бы одно устройство)
           const devices = await redis.sMembers(`user:${p.user_id}:devices`);
@@ -121,12 +142,17 @@ module.exports = (server) => {
               break;
             }
           }
+          
           if (!online) {
+            // Получаем информацию о чате для уведомления
+            const chatInfo = await query('SELECT name, type FROM chats WHERE id = $1', [chatId]);
+            const chatName = chatInfo.rows[0]?.name || username;
+            
             // Отправляем push-уведомление
             await sendPushNotification(
               p.user_id,
               'New message',
-              `${username}: ${safeContent.substring(0, 50)}`,
+              `${username}: ${safeContent.substring(0, 50)}${safeContent.length > 50 ? '...' : ''}`,
               `/chat/${chatId}`
             );
           }
@@ -152,6 +178,13 @@ module.exports = (server) => {
           return callback({ error: 'Message not found or not yours' });
         }
         const chatId = msgRes.rows[0].chat_id;
+        
+        // Проверка прав на редактирование
+        const hasEditPermission = await checkPermission(userId, chatId, PERMISSIONS.EDIT_MESSAGE);
+        if (!hasEditPermission) {
+          return callback({ error: 'You do not have permission to edit messages' });
+        }
+
         const safeContent = sanitize(newContent);
 
         await query('UPDATE messages SET content = $1, edited = TRUE WHERE id = $2', [safeContent, messageId]);
@@ -167,14 +200,27 @@ module.exports = (server) => {
     // ==================== УДАЛЕНИЕ СООБЩЕНИЯ ====================
     socket.on('deleteMessage', async ({ messageId }, callback) => {
       try {
+        // Получаем информацию о сообщении
         const msgRes = await query(
-          'SELECT chat_id FROM messages WHERE id = $1 AND sender_id = $2',
-          [messageId, userId]
+          'SELECT chat_id, sender_id FROM messages WHERE id = $1',
+          [messageId]
         );
         if (msgRes.rows.length === 0) {
-          return callback({ error: 'Message not found or not yours' });
+          return callback({ error: 'Message not found' });
         }
-        const chatId = msgRes.rows[0].chat_id;
+        const { chat_id: chatId, sender_id: senderId } = msgRes.rows[0];
+        
+        // Проверка прав (своё сообщение или есть право удалять чужие)
+        let canDelete = false;
+        if (senderId === userId) {
+          canDelete = true;
+        } else {
+          canDelete = await checkPermission(userId, chatId, PERMISSIONS.DELETE_MESSAGE);
+        }
+        
+        if (!canDelete) {
+          return callback({ error: 'You do not have permission to delete this message' });
+        }
 
         await query('DELETE FROM messages WHERE id = $1', [messageId]);
 
@@ -205,17 +251,31 @@ module.exports = (server) => {
           return callback({ error: 'You are not a member of target chat' });
         }
 
+        // Проверка прав на отправку в целевом чате
+        const hasSendPermission = await checkPermission(userId, toChatId, PERMISSIONS.SEND_MESSAGE);
+        if (!hasSendPermission) {
+          return callback({ error: 'You do not have permission to send messages to target chat' });
+        }
+
         const newMessageId = generateId();
         await query(`
           INSERT INTO messages (id, chat_id, sender_id, content, type, forwarded, created_at)
           VALUES ($1, $2, $3, $4, $5, true, NOW())
         `, [newMessageId, toChatId, userId, content, type]);
 
+        // Получаем информацию об отправителе
+        const senderRes = await query('SELECT avatar FROM users WHERE id = $1', [userId]);
+        const senderAvatar = senderRes.rows[0]?.avatar;
+
         const message = {
           id: newMessageId,
           chatId: toChatId,
           senderId: userId,
-          sender: { id: userId, username },
+          sender: { 
+            id: userId, 
+            username,
+            avatar: senderAvatar
+          },
           content,
           type,
           forwarded: true,
@@ -223,6 +283,8 @@ module.exports = (server) => {
         };
 
         io.to(`chat:${toChatId}`).emit('newMessage', message);
+        io.to(`chat:${toChatId}`).emit('chatUpdated', { chatId: toChatId, lastMessage: message });
+        
         if (callback) callback({ success: true, messageId: newMessageId });
       } catch (err) {
         logger.error('forwardMessage error:', err);
@@ -239,14 +301,10 @@ module.exports = (server) => {
         }
         const chatId = msgRes.rows[0].chat_id;
 
-        // Проверяем права на закрепление (админ или владелец)
-        const roleRes = await query(
-          'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-          [chatId, userId]
-        );
-        const role = roleRes.rows[0]?.role;
-        if (!['owner', 'admin'].includes(role)) {
-          return callback({ error: 'Insufficient permissions' });
+        // Проверяем права на закрепление
+        const hasPinPermission = await checkPermission(userId, chatId, PERMISSIONS.PIN_MESSAGE);
+        if (!hasPinPermission) {
+          return callback({ error: 'Insufficient permissions to pin messages' });
         }
 
         // Снимаем закрепление со всех других сообщений в чате (оставляем только одно)
@@ -270,14 +328,10 @@ module.exports = (server) => {
         }
         const chatId = msgRes.rows[0].chat_id;
 
-        // Проверяем права
-        const roleRes = await query(
-          'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-          [chatId, userId]
-        );
-        const role = roleRes.rows[0]?.role;
-        if (!['owner', 'admin'].includes(role)) {
-          return callback({ error: 'Insufficient permissions' });
+        // Проверяем права на открепление
+        const hasPinPermission = await checkPermission(userId, chatId, PERMISSIONS.PIN_MESSAGE);
+        if (!hasPinPermission) {
+          return callback({ error: 'Insufficient permissions to unpin messages' });
         }
 
         await query('UPDATE messages SET pinned = false WHERE id = $1', [messageId]);
@@ -300,6 +354,12 @@ module.exports = (server) => {
         }
         const chatId = msgRes.rows[0].chat_id;
 
+        // Проверка прав на реакции
+        const hasReactPermission = await checkPermission(userId, chatId, PERMISSIONS.REACT);
+        if (!hasReactPermission) {
+          return callback({ error: 'You do not have permission to react' });
+        }
+
         // Вставляем реакцию (игнорируем дубликаты)
         await query(`
           INSERT INTO reactions (message_id, user_id, emoji, created_at)
@@ -317,7 +377,7 @@ module.exports = (server) => {
             GROUP BY emoji
           ) r
         `, [messageId]);
-        const reactions = reactionsRes.rows[0].reactions || [];
+        const reactions = reactionsRes.rows[0]?.reactions || [];
 
         io.to(`chat:${chatId}`).emit('reactionUpdated', { messageId, reactions });
         if (callback) callback({ success: true, reactions });
@@ -350,7 +410,7 @@ module.exports = (server) => {
             GROUP BY emoji
           ) r
         `, [messageId]);
-        const reactions = reactionsRes.rows[0].reactions || [];
+        const reactions = reactionsRes.rows[0]?.reactions || [];
 
         io.to(`chat:${chatId}`).emit('reactionUpdated', { messageId, reactions });
         if (callback) callback({ success: true, reactions });
@@ -395,6 +455,7 @@ module.exports = (server) => {
     // ==================== ВХОДЯЩИЙ ЗВОНОК (WebRTC signaling) ====================
     socket.on('callOffer', ({ chatId, offer, isVideo }) => {
       socket.to(`chat:${chatId}`).emit('callOffer', {
+        callId: generateId(),
         offer,
         from: userId,
         username,
@@ -427,7 +488,6 @@ module.exports = (server) => {
     // ==================== ПИНГ (обновление онлайн-статуса) ====================
     socket.on('ping', () => {
       redis.setEx(`online:${userId}:${deviceId}`, 60, '1');
-      // Можно также отвечать pong, если нужно
       socket.emit('pong', Date.now());
     });
 
@@ -435,6 +495,21 @@ module.exports = (server) => {
     socket.on('disconnect', async () => {
       logger.info(`❌ WebSocket disconnected: user ${username} (device ${deviceId})`);
       await redis.del(`online:${userId}:${deviceId}`);
+      
+      // Проверяем, остались ли у пользователя онлайн-устройства
+      const devices = await redis.sMembers(`user:${userId}:devices`);
+      let anyOnline = false;
+      for (const dev of devices) {
+        if (await redis.exists(`online:${userId}:${dev}`)) {
+          anyOnline = true;
+          break;
+        }
+      }
+      
+      // Если ни одно устройство не онлайн, обновляем last_seen в БД
+      if (!anyOnline) {
+        await query('UPDATE users SET last_seen = NOW() WHERE id = $1', [userId]);
+      }
     });
   });
 
