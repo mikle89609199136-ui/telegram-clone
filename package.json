@@ -1,49 +1,44 @@
 {
-  "name": "craneapp-messenger",
-  "version": "10.0.0",
-  "description": "Full‑featured Telegram‑like messenger with Pixel UI, AI, WebRTC, PostgreSQL, Redis. 1M+ lines of production code.",
-  "main": "index.js",
+  "name": "craheapp-messenger",
+  "version": "1.0.0",
+  "description": "Telegram-like messenger with AI, WebRTC, and pink/purple/black theme",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "migrate": "node migrate.js",
-    "migrate:force": "node migrate.js --force",
-    "backup": "node migrate.js --backup",
-    "lint": "eslint .",
-    "format": "prettier --write ."
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "start": "node server.js",
+    "api": "SERVICE=api node server.js",
+    "ws": "SERVICE=ws node server.js",
+    "media": "SERVICE=media node server.js",
+    "ai": "SERVICE=ai node server.js",
+    "migrate": "node migrate.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.5",
-    "jsonwebtoken": "^9.0.2",
+    "@socket.io/redis-adapter": "^8.2.1",
+    "@aws-sdk/client-s3": "^3.438.0",
     "bcrypt": "^5.1.1",
-    "dotenv": "^16.3.1",
-    "pg": "^8.11.3",
-    "redis": "^4.6.11",
-    "multer": "^1.4.5-lts.1",
-    "sharp": "^0.33.1",
-    "cors": "^2.8.5",
-    "helmet": "^7.1.0",
+    "bull": "^4.11.5",
     "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "csurf": "^1.11.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
-    "morgan": "^1.10.0",
+    "helmet": "^7.1.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "minio": "^7.1.3",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^2.7.0",
+    "pg": "^8.11.3",
+    "prom-client": "^14.2.0",
+    "sharp": "^0.33.1",
+    "socket.io": "^4.7.2",
     "uuid": "^9.0.1",
-    "axios": "^1.6.2",
-    "openai": "^4.24.1",
-    "speakeasy": "^2.0.0",
-    "qrcode": "^1.5.3",
-    "winston": "^3.11.0",
-    "web-push": "^3.6.0",
-    "express-validator": "^7.0.1",
-    "sanitize-html": "^2.11.0",
-    "minimist": "^1.2.8"
+    "winston": "^3.11.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "eslint": "^8.56.0",
-    "prettier": "^3.1.1"
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
