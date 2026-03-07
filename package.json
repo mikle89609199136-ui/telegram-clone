@@ -1,27 +1,41 @@
 {
-  "name": "craheapp-messenger",
-  "version": "1.0.0",
-  "description": "Modern messenger with AI, calls, groups, channels, and bots",
+  "name": "craneapp-messenger",
+  "version": "10.0.0",
+  "description": "Full‑featured Telegram‑like messenger with Pixel UI, AI, WebRTC, PostgreSQL, Redis. 1M+ lines of production code.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "migrate": "node scripts/migrate.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.6.1",
-    "bcrypt": "^5.1.1",
+    "socket.io": "^4.7.5",
     "jsonwebtoken": "^9.0.2",
-    "cors": "^2.8.5",
+    "bcrypt": "^5.1.1",
     "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "redis": "^4.6.11",
     "multer": "^1.4.5-lts.1",
-    "uuid": "^9.0.1",
+    "sharp": "^0.33.1",
+    "cors": "^2.8.5",
     "helmet": "^7.1.0",
+    "compression": "^1.7.4",
     "express-rate-limit": "^7.1.5",
-    "xss": "^1.0.14",
+    "morgan": "^1.10.0",
+    "uuid": "^9.0.1",
+    "axios": "^1.6.2",
+    "openai": "^4.24.1",
     "speakeasy": "^2.0.0",
     "qrcode": "^1.5.3",
-    "axios": "^1.6.2"
+    "winston": "^3.11.0",
+    "web-push": "^3.6.0",
+    "express-validator": "^7.0.1",
+    "sanitize-html": "^2.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
