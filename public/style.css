@@ -1,2185 +1,563 @@
-/* public/style.css – Pixel Neon UI для CraneApp Messenger */
-/* ПОЛНАЯ ВЕРСИЯ – все стили в одном файле */
-
-/* ==================== ПЕРЕМЕННЫЕ ==================== */
 :root {
-  --bg: #0b0b0f;
-  --panel: #14141c;
-  --panel-hover: #1a1a2a;
-  --accent-pink: #ff2da6;
-  --accent-purple: #7a2bff;
-  --accent-cyan: #2bd6ff;
-  --text: #eaeaff;
-  --text-muted: #8a8aa5;
-  --text-dim: #5a5a75;
-  --border: #26263a;
-  --border-light: #2a2a3f;
-  --success: #00ff9d;
-  --warning: #ffb86b;
-  --error: #ff4d4d;
-  --error-bg: rgba(255, 77, 77, 0.1);
-  --online: #00ff9d;
-  --offline: #8a8aa5;
-  --font-pixel: 'VT323', 'Courier New', monospace;
-  
-  /* Размеры */
-  --sidebar-width: 80px;
-  --chat-list-width: 300px;
-  --right-panel-width: 300px;
-  --header-height: 60px;
-  --input-height: 70px;
-  
-  /* Анимации */
-  --transition-fast: 0.15s;
-  --transition-normal: 0.25s;
-  --transition-slow: 0.35s;
-  
-  /* Тени */
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
-  --glow-pink: 0 0 15px var(--accent-pink);
-  --glow-purple: 0 0 15px var(--accent-purple);
-  --glow-cyan: 0 0 15px var(--accent-cyan);
+  --bg-primary: #0A0A0F;
+  --bg-secondary: #12121A;
+  --bg-tertiary: #1A1A24;
+  --accent-purple: #7A3CFF;
+  --accent-pink: #FF2FB3;
+  --text-primary: #FFFFFF;
+  --text-secondary: #9B9B9B;
+  --divider: #20202B;
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --radius-small: 8px;
+  --radius-medium: 12px;
+  --radius-large: 16px;
+  --avatar-radius: 50%;
+  --animation-fast: 120ms;
+  --animation-normal: 180ms;
+  --animation-slow: 240ms;
 }
 
-/* ==================== СБРОС И БАЗОВЫЕ СТИЛИ ==================== */
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-html, body {
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
 body {
-  font-family: var(--font-pixel);
-  background-color: var(--bg);
-  color: var(--text);
-  line-height: 1.5;
-  font-size: 16px;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  height: 100vh;
+  overflow: hidden;
 }
 
 #app {
-  width: 100%;
   height: 100%;
-  position: relative;
 }
 
-/* ==================== ОБЩИЕ КЛАССЫ ==================== */
-.screen {
-  width: 100%;
-  height: 100%;
-  display: none;
-  position: relative;
-  overflow: hidden;
-}
-
-.screen.active {
-  display: block;
-}
-
-/* Панели */
-.pixel-panel {
-  background-color: var(--panel);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-md);
-}
-
-.pixel-panel:hover {
-  border-color: var(--accent-purple);
-  box-shadow: var(--glow-purple);
-}
-
-/* Кнопки */
-.pixel-button {
-  background-color: var(--panel);
-  border: 2px solid var(--border);
-  color: var(--text);
-  padding: 8px 16px;
-  font-family: var(--font-pixel);
-  font-size: 16px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border-radius: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.pixel-button:hover {
-  border-color: var(--accent-pink);
-  box-shadow: var(--glow-pink);
-  transform: translateY(-2px);
-}
-
-.pixel-button:active {
-  transform: translateY(0);
-  box-shadow: none;
-}
-
-.pixel-button.primary {
-  background-color: var(--accent-purple);
-  border-color: var(--accent-pink);
-  color: white;
-}
-
-.pixel-button.small {
-  padding: 4px 8px;
-  font-size: 14px;
-}
-
-.pixel-button.icon {
-  padding: 8px;
-  font-size: 20px;
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.pixel-button.danger {
-  background-color: var(--error-bg);
-  border-color: var(--error);
-  color: var(--error);
-}
-
-.pixel-button.danger:hover {
-  background-color: var(--error);
-  border-color: var(--error);
-  color: white;
-}
-
-/* Поля ввода */
-.pixel-input {
-  background-color: var(--bg);
-  border: 2px solid var(--border);
-  color: var(--text);
-  padding: 12px;
-  font-family: var(--font-pixel);
-  font-size: 16px;
-  outline: none;
-  transition: all var(--transition-fast);
-  border-radius: 6px;
-  width: 100%;
-}
-
-.pixel-input:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: var(--glow-cyan);
-}
-
-.pixel-input::placeholder {
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
-/* Вкладки */
-.tabs {
-  display: flex;
-  border-bottom: 2px solid var(--border);
-  margin-bottom: 16px;
-}
-
-.tab {
-  flex: 1;
-  padding: 8px 16px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-family: var(--font-pixel);
-  font-size: 16px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  text-transform: uppercase;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.active {
-  color: var(--accent-pink);
-  border-bottom: 2px solid var(--accent-pink);
-  margin-bottom: -2px;
-}
-
-/* Бейджи */
-.badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  background-color: var(--accent-pink);
-  color: white;
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 10px;
-  border: 1px solid white;
-  min-width: 18px;
-  text-align: center;
-}
-
-/* Полоса прокрутки */
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-purple);
-}
-
-/* ==================== ЭКРАН АВТОРИЗАЦИИ ==================== */
-#auth-screen {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: var(--bg);
-  background-image: radial-gradient(circle at 10% 20%, rgba(122, 43, 255, 0.1) 0%, transparent 50%);
-}
-
+/* Auth pages */
 .auth-container {
-  width: 400px;
-  max-width: 90%;
-  padding: 32px;
-  background: var(--panel);
-  border: 2px solid var(--accent-purple);
-  box-shadow: var(--glow-purple);
-  border-radius: 12px;
-  text-align: center;
-  animation: fadeInUp 0.5s ease;
+  max-width: 400px;
+  margin: 100px auto;
+  padding: 40px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-large);
+  border: 1px solid var(--divider);
+  box-shadow: var(--shadow-soft);
 }
 
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.logo {
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  border: 3px solid var(--accent-pink);
+.auth-container h2 {
   margin-bottom: 20px;
-  object-fit: cover;
-  box-shadow: var(--glow-pink);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 45, 166, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 10px rgba(255, 45, 166, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 45, 166, 0);
-  }
-}
-
-.pixel-title {
-  font-size: 32px;
+  text-align: center;
   color: var(--accent-pink);
-  text-shadow: 0 0 10px var(--accent-pink);
-  margin-bottom: 24px;
-  letter-spacing: 2px;
 }
 
-.auth-form {
-  display: none;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-}
-
-.auth-form.active {
-  display: flex;
-}
-
-#login-2fa-section {
-  display: none;
-  animation: slideDown 0.3s ease;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.error-message {
-  color: var(--error);
-  margin-top: 16px;
-  font-size: 14px;
-  min-height: 20px;
-  text-shadow: 0 0 5px var(--error);
-}
-
-/* Лоадер */
-.loading-spinner {
-  display: inline-block;
-  width: 30px;
-  height: 30px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent-pink);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 16px auto;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ==================== ОСНОВНОЙ ИНТЕРФЕЙС ==================== */
-#main-screen {
-  display: flex;
-  height: 100%;
-  width: 100%;
-  background: var(--bg);
-}
-
-/* Левая боковая панель (sidebar) */
-.sidebar {
-  width: var(--sidebar-width);
-  background: var(--panel);
-  border-right: 2px solid var(--border);
+.auth-container form {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 20px 0;
-  z-index: 10;
-  flex-shrink: 0;
+  gap: 15px;
 }
 
-.sidebar .logo {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--accent-pink);
-  margin-bottom: 24px;
-  cursor: pointer;
-  overflow: hidden;
-  transition: all var(--transition-fast);
+.auth-container input {
+  padding: 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-medium);
+  font-size: 16px;
 }
 
-.sidebar .logo:hover {
-  transform: scale(1.1);
-  box-shadow: var(--glow-pink);
-}
-
-.sidebar .logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.sidebar-menu {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: 100%;
-  align-items: center;
-}
-
-.sidebar-item {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  font-size: 24px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  position: relative;
-  color: var(--text-muted);
-}
-
-.sidebar-item:hover {
+.auth-container input:focus {
+  outline: none;
   border-color: var(--accent-purple);
-  box-shadow: var(--glow-purple);
-  color: var(--text);
-  transform: scale(1.05);
 }
 
-.sidebar-item.active {
-  border-color: var(--accent-pink);
-  box-shadow: var(--glow-pink);
-  color: var(--accent-pink);
-}
-
-.sidebar-item .badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  background: var(--accent-pink);
+.auth-container button {
+  padding: 12px;
+  background: var(--accent-purple);
   color: white;
-  font-size: 10px;
-  padding: 2px 5px;
-  border-radius: 10px;
-  border: 1px solid white;
-  min-width: 16px;
+  border: none;
+  border-radius: var(--radius-medium);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background var(--animation-fast);
+}
+
+.auth-container button:hover {
+  background: var(--accent-pink);
+}
+
+.auth-container button:active {
+  transform: scale(0.98);
+}
+
+.auth-container p {
+  margin-top: 20px;
   text-align: center;
 }
 
-.sidebar-item.profile {
-  margin-top: auto;
-  margin-bottom: 20px;
+.auth-container a {
+  color: var(--accent-pink);
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.sidebar-item.profile img {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  object-fit: cover;
-  transition: all var(--transition-fast);
+/* Main messenger layout */
+.messenger-container {
+  display: flex;
+  height: 100%;
 }
 
-.sidebar-item.profile:hover img {
-  border-color: var(--accent-pink);
-  transform: scale(1.05);
-}
-
-/* Панель списка чатов */
-.chat-list-panel {
-  width: var(--chat-list-width);
-  background: var(--panel);
-  border-right: 2px solid var(--border);
+/* Sidebar */
+.sidebar {
+  width: 340px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  transition: transform var(--transition-normal);
-  flex-shrink: 0;
 }
 
-.panel-header {
-  padding: 16px;
+.sidebar-header {
+  height: 64px;
+  padding: 0 16px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  border-bottom: 2px solid var(--border);
-  height: var(--header-height);
+  gap: 12px;
+  border-bottom: 1px solid var(--divider);
 }
 
-.panel-header h2 {
-  font-size: 20px;
-  color: var(--accent-cyan);
-  text-shadow: 0 0 5px var(--accent-cyan);
-  margin: 0;
-}
-
-.new-chat-btn {
+.menu-button, .search-button, .new-chat-button {
   width: 36px;
   height: 36px;
-  padding: 0;
-  font-size: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  transition: background var(--animation-fast);
+  font-size: 20px;
+}
+
+.menu-button:hover, .search-button:hover, .new-chat-button:hover {
+  background: var(--hover-overlay);
+}
+
+.app-title {
+  flex: 1;
+  font-size: 20px;
+  font-weight: bold;
+  color: var(--accent-pink);
+  cursor: pointer;
 }
 
 .search-box {
-  padding: 12px;
-  border-bottom: 2px solid var(--border);
+  height: 40px;
+  margin: 8px 16px;
+  background: var(--bg-tertiary);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
 }
 
 .search-box input {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
   width: 100%;
-  padding: 10px;
-  background: var(--bg);
-  border: 2px solid var(--border);
-  color: var(--text);
-  font-size: 14px;
-  border-radius: 6px;
-  transition: all var(--transition-fast);
+  margin-left: 8px;
+  outline: none;
 }
 
-.search-box input:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: var(--glow-cyan);
+.search-box input::placeholder {
+  color: var(--text-secondary);
 }
 
-.chat-list {
+.chat-filters {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--divider);
+  overflow-x: auto;
+}
+
+.filter-tab {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--animation-fast), color var(--animation-fast);
+  white-space: nowrap;
+}
+
+.filter-tab.active {
+  background: var(--accent-purple);
+  color: white;
+}
+
+.chats-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
 }
 
 .chat-item {
-  display: grid;
-  grid-template-columns: 48px 1fr auto;
+  height: 72px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
   gap: 12px;
-  padding: 12px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  margin-bottom: 4px;
   cursor: pointer;
-  transition: all var(--transition-fast);
-  background: transparent;
+  transition: background var(--animation-fast);
+  border-bottom: 1px solid var(--divider);
+  position: relative;
 }
 
 .chat-item:hover {
-  border-color: var(--accent-purple);
-  background: rgba(122, 43, 255, 0.1);
-  transform: translateX(2px);
+  background: var(--hover-overlay);
 }
 
 .chat-item.active {
-  border-color: var(--accent-pink);
-  background: rgba(255, 45, 166, 0.1);
-  box-shadow: var(--glow-pink);
+  background: var(--accent-purple);
 }
 
 .chat-avatar {
   width: 48px;
   height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
+  border-radius: var(--avatar-radius);
   object-fit: cover;
+  border: 2px solid var(--accent-purple);
 }
 
 .chat-info {
+  flex: 1;
   overflow: hidden;
-  min-width: 0;
 }
 
 .chat-name {
-  font-size: 16px;
   font-weight: bold;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-bottom: 4px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.last-message {
-  font-size: 13px;
-  color: var(--text-muted);
+.chat-last-message {
+  font-size: 14px;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .chat-meta {
-  text-align: right;
-  font-size: 11px;
-  color: var(--text-muted);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
 }
 
-.unread-badge {
-  background: var(--accent-pink);
-  color: white;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 10px;
-  border: 1px solid white;
-  min-width: 18px;
-  text-align: center;
+.chat-time {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
-/* Окно чата */
-.chat-window {
+.unread-badge {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--accent-pink);
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.ai-button {
+  padding: 16px;
+  text-align: center;
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple));
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  border-top: 1px solid var(--divider);
+  transition: opacity var(--animation-fast);
+}
+
+.ai-button:hover {
+  opacity: 0.9;
+}
+
+.ai-button:active {
+  transform: scale(0.98);
+}
+
+/* Chat area */
+.chat-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
-  overflow: hidden;
-  min-width: 0;
+  background: var(--bg-primary);
 }
 
 .chat-header {
-  padding: 12px 16px;
-  background: var(--panel);
-  border-bottom: 2px solid var(--border);
+  height: 64px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--divider);
+  padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 12px;
-  height: var(--header-height);
 }
 
-.back-btn {
-  display: none;
-}
-
-.chat-avatar {
+.chat-header-avatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
+  border-radius: var(--avatar-radius);
+  cursor: pointer;
+}
+
+.chat-header-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--avatar-radius);
   object-fit: cover;
 }
 
-.chat-info {
+.chat-header-info {
   flex: 1;
-  min-width: 0;
 }
 
-.chat-info h3 {
-  font-size: 18px;
-  color: var(--text);
-  margin: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.chat-header-name {
+  font-weight: bold;
+  font-size: 16px;
 }
 
-.status {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.status.online {
-  color: var(--online);
-}
-
-.status.typing {
-  color: var(--accent-cyan);
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0.5; }
-}
-
-.chat-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* Область сообщений */
-.messages-area {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: var(--bg);
-  background-image: radial-gradient(circle at 50% 50%, rgba(122, 43, 255, 0.03) 0%, transparent 50%);
-}
-
-.message {
-  max-width: 70%;
-  display: flex;
-  flex-direction: column;
-  animation: messageAppear 0.2s ease;
-}
-
-@keyframes messageAppear {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.message.own {
-  align-self: flex-end;
-}
-
-.message-bubble {
-  background: var(--panel);
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 15px;
-  word-wrap: break-word;
-  position: relative;
-  transition: all var(--transition-fast);
-}
-
-.message.own .message-bubble {
-  background: var(--accent-purple);
-  border-color: var(--accent-pink);
-  color: white;
-}
-
-.message-bubble:hover {
-  border-color: var(--accent-cyan);
-  box-shadow: var(--glow-cyan);
-}
-
-.message-meta {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
-  align-self: flex-end;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.message.own .message-meta {
-  color: var(--text);
-}
-
-.status[data-status="read"] {
-  color: var(--accent-cyan);
-}
-
-.status[data-status="delivered"] {
-  color: var(--text-muted);
-}
-
-/* Реакции */
-.reactions {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-  flex-wrap: wrap;
-}
-
-.reaction {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 2px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.reaction:hover {
-  border-color: var(--accent-pink);
-  background: rgba(255, 45, 166, 0.1);
-  transform: scale(1.05);
-}
-
-.message.own .reaction {
-  background: var(--accent-purple);
-  border-color: var(--accent-pink);
-}
-
-/* Область ввода */
-.message-input-area {
-  padding: 16px;
-  background: var(--panel);
-  border-top: 2px solid var(--border);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  height: var(--input-height);
-}
-
-#message-text {
-  flex: 1;
-  padding: 12px;
-  background: var(--bg);
-  border: 2px solid var(--border);
-  color: var(--text);
-  font-size: 15px;
-  outline: none;
-  border-radius: 6px;
-  transition: all var(--transition-fast);
-  min-width: 0;
-}
-
-#message-text:focus {
-  border-color: var(--accent-cyan);
-  box-shadow: var(--glow-cyan);
-}
-
-/* Закреплённые сообщения */
-.pinned-panel {
-  background: var(--panel);
-  border-bottom: 2px solid var(--border);
-  padding: 8px 16px;
+.chat-header-status {
   font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.chat-header-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: 100px;
-  overflow-y: auto;
-}
-
-.pinned-panel h4 {
-  color: var(--accent-pink);
-  font-size: 12px;
-  margin: 0 0 4px 0;
-  text-transform: uppercase;
-}
-
-.pinned-message {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 8px;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all var(--transition-fast);
-  font-size: 12px;
-}
-
-.pinned-message:hover {
-  background: rgba(255, 45, 166, 0.1);
-  color: var(--accent-pink);
-}
-
-.pinned-message span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-.pinned-message button {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all var(--transition-fast);
-}
-
-.pinned-message button:hover {
-  color: var(--accent-pink);
-  background: rgba(255, 45, 166, 0.1);
-}
-
-.highlight {
-  animation: highlightFlash 1s ease;
-}
-
-@keyframes highlightFlash {
-  0%, 100% { background: transparent; }
-  50% { background: rgba(255, 45, 166, 0.3); }
-}
-
-/* Контекстное меню */
-.message-context-menu {
-  position: fixed;
-  background: var(--panel);
-  border: 2px solid var(--accent-pink);
-  border-radius: 8px;
-  min-width: 150px;
-  z-index: 2000;
-  box-shadow: var(--glow-pink);
-  padding: 4px 0;
-}
-
-.pixel-dropdown-item {
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-  color: var(--text);
-  font-size: 14px;
-}
-
-.pixel-dropdown-item:hover {
-  background: rgba(255, 45, 166, 0.2);
-  color: var(--accent-pink);
-}
-
-/* Emoji picker */
-.emoji-picker {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-  padding: 12px;
-  background: var(--panel);
-  border: 2px solid var(--accent-purple);
-  border-radius: 8px;
-  position: absolute;
-  bottom: calc(var(--input-height) + 10px);
-  left: 10px;
-  z-index: 100;
-  width: 220px;
-  box-shadow: var(--glow-purple);
-}
-
-.emoji-btn {
-  font-size: 20px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.emoji-btn:hover {
-  border-color: var(--accent-pink);
-  transform: scale(1.1);
-  background: rgba(255, 45, 166, 0.1);
-}
-
-/* Меню прикрепления */
-.attach-menu {
-  position: absolute;
-  bottom: calc(var(--input-height) + 10px);
-  left: 60px;
-  background: var(--panel);
-  border: 2px solid var(--accent-purple);
-  border-radius: 8px;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  z-index: 100;
-  min-width: 180px;
-  box-shadow: var(--glow-purple);
-}
-
-.attach-menu div {
-  padding: 10px 12px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  transition: all var(--transition-fast);
-  font-size: 14px;
-  display: flex;
-  align-items: center;
   gap: 8px;
 }
 
-.attach-menu div:hover {
-  background: rgba(122, 43, 255, 0.2);
-  border-color: var(--accent-pink);
-}
-
-/* Правая панель */
-.right-panel {
-  width: var(--right-panel-width);
-  background: var(--panel);
-  border-left: 2px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.panel-tabs {
-  display: flex;
-  border-bottom: 2px solid var(--border);
-  height: 50px;
-}
-
-.panel-tabs .tab {
-  flex: 1;
-  padding: 12px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  transition: all var(--transition-fast);
-  text-transform: uppercase;
-}
-
-.panel-tabs .tab.active {
-  color: var(--accent-pink);
-  border-bottom: 2px solid var(--accent-pink);
-  background: rgba(255, 45, 166, 0.05);
-}
-
-.panel-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-/* Информационная панель */
-.info-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.chat-info-section {
-  background: var(--bg);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.chat-info-section h4 {
-  color: var(--accent-cyan);
-  margin-bottom: 8px;
-  font-size: 14px;
-  text-transform: uppercase;
-}
-
-.member-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.member-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 4px;
-  transition: all var(--transition-fast);
-}
-
-.member-item:hover {
-  background: rgba(122, 43, 255, 0.1);
-}
-
-.member-avatar {
+.icon-button {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 1px solid var(--border);
-}
-
-.member-name {
-  flex: 1;
-  font-size: 14px;
-}
-
-.member-role {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--panel);
-  padding: 2px 6px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-}
-
-.member-role.owner {
-  color: var(--accent-pink);
-  border-color: var(--accent-pink);
-}
-
-.member-role.admin {
-  color: var(--accent-purple);
-  border-color: var(--accent-purple);
-}
-
-/* Медиа-галерея */
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-  gap: 6px;
-  padding: 8px;
-}
-
-.media-item {
-  aspect-ratio: 1;
-  border: 2px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.media-item:hover {
-  border-color: var(--accent-pink);
-  transform: scale(1.02);
-  box-shadow: var(--glow-pink);
-}
-
-.media-item img,
-.media-item video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.file-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px;
-  border-bottom: 1px solid var(--border);
-  transition: all var(--transition-fast);
-}
-
-.file-item:hover {
-  background: rgba(122, 43, 255, 0.1);
-}
-
-.file-item button {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 4px 8px;
-  border-radius: 4px;
+  justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--animation-fast);
+  font-size: 18px;
 }
 
-.file-item button:hover {
-  border-color: var(--accent-pink);
-  background: var(--accent-pink);
-  color: white;
+.icon-button:hover {
+  background: var(--hover-overlay);
 }
 
-/* Drag & drop overlay */
-.drag-over {
-  border: 2px dashed var(--accent-pink) !important;
-  background: rgba(255, 45, 166, 0.05) !important;
-}
-
-/* Прогресс загрузки */
-.upload-progress {
-  background: var(--panel);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  padding: 10px;
-  margin: 4px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  animation: slideIn 0.3s ease;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.upload-progress span {
+.messages-area {
   flex: 1;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.upload-progress progress {
-  flex: 2;
-  height: 8px;
-  border-radius: 4px;
-}
-
-.upload-progress progress::-webkit-progress-bar {
-  background-color: var(--bg);
-  border-radius: 4px;
-}
-
-.upload-progress progress::-webkit-progress-value {
-  background-color: var(--accent-cyan);
-  border-radius: 4px;
-}
-
-.upload-progress button {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 11px;
-  transition: all var(--transition-fast);
-}
-
-.upload-progress button:hover {
-  border-color: var(--error);
-  background: var(--error);
-  color: white;
-}
-
-/* Индикатор печатания */
-.typing-indicator {
-  display: flex;
-  gap: 4px;
-  padding: 8px;
-}
-
-.typing-indicator span {
-  width: 8px;
-  height: 8px;
-  background: var(--text-muted);
-  border-radius: 50%;
-  animation: typing 1.4s infinite;
-}
-
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing {
-  0%, 60%, 100% { transform: translateY(0); }
-  30% { transform: translateY(-10px); }
-}
-
-/* ==================== ВЕРХНЯЯ ПАНЕЛЬ ДЛЯ ЭКРАНОВ ==================== */
-.top-bar {
-  height: var(--header-height);
-  background: var(--panel);
-  border-bottom: 2px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  gap: 12px;
-}
-
-.top-bar h1 {
-  flex: 1;
-  font-size: 20px;
-  color: var(--accent-cyan);
-  margin: 0;
-}
-
-/* ==================== ЭКРАН КОНТАКТОВ ==================== */
-.contacts-list {
-  flex: 1;
-  overflow-y: auto;
   padding: 16px;
-}
-
-.contact-item {
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  margin-bottom: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.contact-item:hover {
-  border-color: var(--accent-purple);
-  background: rgba(122, 43, 255, 0.1);
-}
-
-.contact-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  object-fit: cover;
-}
-
-.contact-info {
-  flex: 1;
-}
-
-.contact-name {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.contact-status {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.contact-status.online {
-  color: var(--online);
-}
-
-.contact-actions {
-  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-/* ==================== ЭКРАН ЗВОНКОВ ==================== */
-.calls-history {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.call-item {
+.message {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  margin-bottom: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.call-item:hover {
-  border-color: var(--accent-purple);
-  background: rgba(122, 43, 255, 0.1);
-}
-
-.call-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  object-fit: cover;
-}
-
-.call-info {
-  flex: 1;
-}
-
-.call-name {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--text);
   margin-bottom: 4px;
 }
 
-.call-meta {
-  display: flex;
-  gap: 12px;
-  font-size: 13px;
-  color: var(--text-muted);
+.message.incoming {
+  justify-content: flex-start;
 }
 
-.call-direction {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.message.outgoing {
+  justify-content: flex-end;
 }
 
-.call-direction.incoming {
-  color: var(--accent-cyan);
+.message-bubble {
+  max-width: 72%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  position: relative;
+  word-wrap: break-word;
+  animation: message-pop var(--animation-normal);
 }
 
-.call-direction.outgoing {
-  color: var(--accent-pink);
+@keyframes message-pop {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
-.call-status {
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 11px;
+.incoming .message-bubble {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent-purple);
 }
 
-.call-status.missed {
-  background: var(--error-bg);
-  color: var(--error);
-  border: 1px solid var(--error);
-}
-
-.call-status.completed {
-  background: rgba(0, 255, 157, 0.1);
-  color: var(--success);
-  border: 1px solid var(--success);
-}
-
-/* ==================== ЭКРАН КАНАЛОВ ==================== */
-.channels-tabs {
-  display: flex;
-  border-bottom: 2px solid var(--border);
-}
-
-.channels-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.channel-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  margin-bottom: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.channel-item:hover {
-  border-color: var(--accent-purple);
-  background: rgba(122, 43, 255, 0.1);
-}
-
-.channel-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  object-fit: cover;
-}
-
-.channel-info {
-  flex: 1;
-}
-
-.channel-name {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.channel-meta {
-  font-size: 13px;
-  color: var(--text-muted);
-  display: flex;
-  gap: 12px;
-}
-
-.channel-subscribe-btn {
-  padding: 6px 12px;
-  font-size: 13px;
-}
-
-.channel-subscribe-btn.subscribed {
-  background: var(--accent-purple);
-  border-color: var(--accent-pink);
+.outgoing .message-bubble {
+  background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple));
   color: white;
 }
 
-/* ==================== ЭКРАН НАСТРОЕК ==================== */
-.settings-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.settings-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border: 2px solid transparent;
-  border-radius: 8px;
+.message-text {
   margin-bottom: 4px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
 }
 
-.settings-item:hover {
-  border-color: var(--accent-purple);
-  background: rgba(122, 43, 255, 0.1);
-}
-
-.settings-item .icon {
-  font-size: 24px;
-  width: 32px;
-  text-align: center;
-}
-
-.settings-item span:not(.icon) {
-  flex: 1;
-  font-size: 16px;
-}
-
-.settings-section {
-  background: var(--panel);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.settings-section h3 {
-  color: var(--accent-cyan);
-  font-size: 16px;
-  margin-bottom: 12px;
-}
-
-.settings-section label {
+.message-time {
+  font-size: 11px;
+  opacity: 0.7;
+  text-align: right;
   display: block;
-  margin-bottom: 8px;
-  font-size: 14px;
-}
-
-.settings-section select,
-.settings-section input[type="text"],
-.settings-section input[type="password"] {
-  width: 100%;
-  padding: 8px;
-  background: var(--bg);
-  border: 2px solid var(--border);
-  color: var(--text);
-  font-size: 14px;
-  border-radius: 4px;
   margin-top: 4px;
 }
 
-.settings-section input[type="checkbox"] {
-  margin-right: 8px;
+.reply-preview {
+  font-size: 12px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  margin-bottom: 4px;
 }
 
-/* ==================== ЭКРАН ПОИСКА ==================== */
-.search-results {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.search-section {
-  margin-bottom: 20px;
-}
-
-.search-section h3 {
-  color: var(--accent-cyan);
-  font-size: 14px;
-  margin-bottom: 8px;
-  text-transform: uppercase;
-}
-
-.search-result-item {
+/* Message input */
+.message-input-area {
+  height: 60px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--divider);
+  padding: 0 12px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  margin-bottom: 2px;
+  gap: 8px;
+}
+
+.emoji-button, .attach-button, .voice-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--animation-fast);
+  color: var(--text-secondary);
+  font-size: 20px;
 }
 
-.search-result-item:hover {
+.emoji-button:hover, .attach-button:hover, .voice-button:hover {
+  background: var(--hover-overlay);
+  color: var(--text-primary);
+}
+
+.message-input {
+  flex: 1;
+  height: 40px;
+  background: var(--bg-primary);
+  border: 1px solid var(--divider);
+  border-radius: 20px;
+  padding: 0 12px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.message-input:focus {
   border-color: var(--accent-purple);
-  background: rgba(122, 43, 255, 0.1);
 }
 
-.search-result-avatar {
+.send-button {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 2px solid var(--border);
-  object-fit: cover;
-}
-
-.search-result-info {
-  flex: 1;
-}
-
-.search-result-title {
-  font-size: 15px;
-  font-weight: bold;
-  color: var(--text);
-  margin-bottom: 2px;
-}
-
-.search-result-subtitle {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* ==================== ЭКРАН ПРОФИЛЯ ==================== */
-.profile-header {
-  padding: 24px;
-  text-align: center;
-  background: var(--panel);
-  border-bottom: 2px solid var(--border);
-}
-
-.profile-avatar-container {
-  position: relative;
-  width: 120px;
-  height: 120px;
-  margin: 0 auto 16px;
-  cursor: pointer;
-}
-
-.profile-avatar-container img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  border: 3px solid var(--accent-pink);
-  object-fit: cover;
-  transition: all var(--transition-fast);
-}
-
-.profile-avatar-container:hover img {
-  filter: brightness(0.8);
-}
-
-.profile-avatar-container:hover .avatar-overlay {
-  opacity: 1;
-}
-
-.avatar-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--accent-purple);
   color: white;
-  font-size: 14px;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-  border: 3px solid var(--accent-pink);
-}
-
-#profile-username {
-  font-size: 24px;
-  color: var(--text);
-  margin-bottom: 8px;
-}
-
-#profile-bio {
-  color: var(--text-muted);
-  font-size: 14px;
-  max-width: 300px;
-  margin: 0 auto;
-}
-
-.profile-stats {
-  display: flex;
-  justify-content: space-around;
-  padding: 20px;
-  border-bottom: 2px solid var(--border);
-}
-
-.stat {
-  text-align: center;
-}
-
-.stat-value {
-  display: block;
-  font-size: 24px;
-  font-weight: bold;
-  color: var(--accent-cyan);
-}
-
-.stat-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.profile-actions {
-  padding: 20px;
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
-/* ==================== МОДАЛЬНЫЕ ОКНА ==================== */
-.pixel-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 3000;
-  backdrop-filter: blur(4px);
-  animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.modal-content {
-  background: var(--panel);
-  border: 2px solid var(--accent-purple);
-  padding: 24px;
-  max-width: 400px;
-  width: 90%;
-  border-radius: 12px;
-  animation: modalPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: var(--glow-purple);
-}
-
-@keyframes modalPop {
-  0% {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.modal-content h3 {
-  color: var(--accent-pink);
-  margin-bottom: 16px;
-  font-size: 20px;
-  text-align: center;
-}
-
-.modal-content input,
-.modal-content select,
-.modal-content textarea {
-  width: 100%;
-  padding: 10px;
-  margin-bottom: 12px;
-  background: var(--bg);
-  border: 2px solid var(--border);
-  color: var(--text);
-  border-radius: 4px;
-  font-family: var(--font-pixel);
-  font-size: 14px;
-}
-
-.modal-content textarea {
-  min-height: 80px;
-  resize: vertical;
-}
-
-.modal-content button {
-  margin: 8px 4px;
-}
-
-/* ==================== ОКНО ЗВОНКА ==================== */
-.call-window {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 400px;
-  max-width: 90%;
-  background: var(--panel);
-  border: 2px solid var(--accent-purple);
-  border-radius: 12px;
-  z-index: 2500;
-  padding: 20px;
-  box-shadow: var(--glow-purple);
-  animation: modalPop 0.3s ease;
-}
-
-.call-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  font-size: 18px;
-  color: var(--accent-cyan);
-}
-
-.call-video {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
-  min-height: 200px;
-  background: var(--bg);
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  position: relative;
-}
-
-.call-video video {
-  width: 100%;
-  max-height: 300px;
-  object-fit: cover;
-}
-
-#local-video {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  width: 120px;
-  height: 90px;
-  border: 2px solid var(--accent-pink);
-  border-radius: 4px;
-  object-fit: cover;
-}
-
-.call-avatar {
-  font-size: 80px;
-  text-align: center;
-  padding: 40px;
-  color: var(--accent-pink);
-}
-
-.call-controls {
-  display: flex;
-  justify-content: space-around;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.call-timer {
-  text-align: center;
-  margin-bottom: 16px;
-  font-size: 20px;
-  color: var(--accent-cyan);
-}
-
-/* ==================== УВЕДОМЛЕНИЯ (IN-APP) ==================== */
-.notification-container {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 4000;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 300px;
-}
-
-.notification {
-  background: var(--panel);
-  border: 2px solid var(--accent-purple);
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: var(--glow-purple);
-  animation: slideInRight 0.3s ease;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: transform var(--animation-fast);
+  font-size: 18px;
 }
 
-.notification:hover {
-  transform: translateX(-5px);
-  border-color: var(--accent-pink);
+.send-button:hover {
+  transform: scale(1.05);
 }
 
-@keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+.send-button:active {
+  transform: scale(0.95);
 }
 
-.notification-title {
-  font-weight: bold;
-  color: var(--accent-pink);
-  margin-bottom: 4px;
-  font-size: 14px;
+/* Right panel */
+.right-panel {
+  width: 320px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--divider);
+  overflow-y: auto;
 }
 
-.notification-body {
-  color: var(--text);
-  font-size: 13px;
-  margin-bottom: 4px;
+/* Media */
+.media-image {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: var(--radius-small);
+  cursor: pointer;
+  margin-top: 5px;
 }
 
-.notification-time {
-  color: var(--text-muted);
-  font-size: 11px;
-  text-align: right;
+.media-video, .media-audio {
+  max-width: 100%;
+  margin-top: 5px;
 }
 
-/* ==================== ЗАГРУЗЧИК ==================== */
-.loader {
+.media-file {
   display: inline-block;
-  width: 30px;
-  height: 30px;
-  border: 3px solid var(--border);
-  border-top-color: var(--accent-pink);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-small);
+  color: var(--accent-purple);
+  text-decoration: none;
 }
 
-.loader.small {
-  width: 20px;
-  height: 20px;
-  border-width: 2px;
-}
-
-.loader.large {
-  width: 50px;
-  height: 50px;
-  border-width: 4px;
-}
-
-/* ==================== МОБИЛЬНАЯ АДАПТАЦИЯ ==================== */
-@media (max-width: 768px) {
-  :root {
-    --sidebar-width: 0;
-    --chat-list-width: 100%;
-    --right-panel-width: 100%;
-  }
-
+/* Mobile */
+@media (max-width: 899px) {
   .sidebar {
+    width: 100%;
+  }
+  .right-panel {
     display: none;
   }
-
-  .chat-list-panel {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 80%;
-    background: var(--panel);
-    transform: translateX(-100%);
-    transition: transform var(--transition-normal);
-    z-index: 150;
-    border-right: 2px solid var(--border);
+  .chat-area.active {
+    display: flex;
   }
-
-  .chat-list-panel.active {
-    transform: translateX(0);
-  }
-
-  .chat-window {
-    width: 100%;
-    height: calc(100% - 60px); /* Высота минус bottom-nav */
-    margin-bottom: 60px;
-  }
-
-  .back-btn {
-    display: inline-block !important;
-  }
-
-  .right-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 60px;
-    width: 100%;
-    background: var(--panel);
-    transform: translateX(100%);
-    transition: transform var(--transition-normal);
-    z-index: 200;
-  }
-
-  .right-panel.active {
-    transform: translateX(0);
-  }
-
-  .bottom-nav {
-    display: flex !important;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: var(--panel);
-    border-top: 2px solid var(--border);
-    justify-content: space-around;
-    align-items: center;
-    z-index: 100;
-  }
-
-  .fab {
-    display: flex !important;
-    position: fixed;
-    bottom: 70px;
-    right: 20px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: var(--accent-purple);
-    border: 2px solid var(--accent-pink);
-    color: white;
-    font-size: 28px;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 100;
-    box-shadow: var(--glow-purple);
-    transition: all var(--transition-fast);
-  }
-
-  .fab:hover {
-    transform: scale(1.1);
-    box-shadow: var(--glow-pink);
-  }
-
-  .message {
-    max-width: 85%;
-  }
-
-  .panel-header h2 {
-    font-size: 18px;
-  }
-
-  .chat-name {
-    font-size: 15px;
-  }
-
-  .last-message {
-    font-size: 12px;
+  .sidebar.active + .chat-area {
+    display: flex;
   }
 }
 
-/* ==================== УТИЛИТЫ ==================== */
-.text-center { text-align: center; }
-.text-right { text-align: right; }
-.text-left { text-align: left; }
-
-.mt-1 { margin-top: 4px; }
-.mt-2 { margin-top: 8px; }
-.mt-3 { margin-top: 12px; }
-.mt-4 { margin-top: 16px; }
-.mb-1 { margin-bottom: 4px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-3 { margin-bottom: 12px; }
-.mb-4 { margin-bottom: 16px; }
-
-.p-1 { padding: 4px; }
-.p-2 { padding: 8px; }
-.p-3 { padding: 12px; }
-.p-4 { padding: 16px; }
-
-.hidden { display: none !important; }
-.invisible { visibility: hidden; }
-
-.flex { display: flex; }
-.flex-col { flex-direction: column; }
-.items-center { align-items: center; }
-.justify-center { justify-content: center; }
-.justify-between { justify-content: space-between; }
-.gap-1 { gap: 4px; }
-.gap-2 { gap: 8px; }
-.gap-3 { gap: 12px; }
-.gap-4 { gap: 16px; }
-
-.w-full { width: 100%; }
-.h-full { height: 100%; }
-
-.rounded { border-radius: 4px; }
-.rounded-lg { border-radius: 8px; }
-.rounded-full { border-radius: 50%; }
-
-/* ==================== АНИМАЦИИ ==================== */
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Page visibility */
+.page {
+  display: none;
+  height: 100%;
 }
 
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.page.active {
+  display: block;
 }
 
-@keyframes slideLeft {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes slideRight {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes glow {
-  0% {
-    box-shadow: 0 0 5px var(--accent-pink);
-  }
-  50% {
-    box-shadow: 0 0 20px var(--accent-pink);
-  }
-  100% {
-    box-shadow: 0 0 5px var(--accent-pink);
-  }
-}
-
-/* Анимации для элементов */
-.animate-slide-up { animation: slideUp 0.3s ease; }
-.animate-slide-down { animation: slideDown 0.3s ease; }
-.animate-slide-left { animation: slideLeft 0.3s ease; }
-.animate-slide-right { animation: slideRight 0.3s ease; }
-.animate-pulse { animation: pulse 2s infinite; }
-.animate-glow { animation: glow 2s infinite; }
-
-/* ==================== ПОДДЕРЖКА РАЗНЫХ ТЕМ ==================== */
-.theme-light {
-  --bg: #f5f5f7;
-  --panel: #ffffff;
-  --panel-hover: #f0f0f2;
-  --border: #e0e0e5;
-  --border-light: #d0d0d8;
-  --text: #333333;
-  --text-muted: #666666;
-  --text-dim: #999999;
-}
-
-.theme-neon {
-  --bg: #0a0a0a;
-  --panel: #1a1a2a;
-  --accent-pink: #ff00ff;
-  --accent-purple: #aa00ff;
-  --accent-cyan: #00ffff;
-  --text: #ffffff;
-  --border: #ff00ff;
-  --border-light: #aa00ff;
+/* Utility classes */
+.hidden {
+  display: none !important;
 }
