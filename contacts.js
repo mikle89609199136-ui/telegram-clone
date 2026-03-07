@@ -1,13 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const { query } = require('./data');
+const { redis } = require('./database');
 const logger = require('./logger');
 
 // ==================== ПОЛУЧЕНИЕ СПИСКА КОНТАКТОВ ====================
 router.get('/', async (req, res) => {
   try {
     const contacts = await query(`
-      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, c.name as custom_name
+      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, c.name as custom_name,
+        (SELECT COUNT(*) > 0 FROM devices d 
+         WHERE d.user_id = u.id 
+           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
       FROM contacts c
       JOIN users u ON u.id = c.contact_id
       WHERE c.user_id = $1
@@ -24,6 +28,7 @@ router.get('/', async (req, res) => {
 // ==================== ДОБАВЛЕНИЕ КОНТАКТА ====================
 router.post('/', async (req, res) => {
   const { contactId, name } = req.body;
+  
   if (!contactId) {
     return res.status(400).json({ error: 'contactId required' });
   }
@@ -46,7 +51,18 @@ router.post('/', async (req, res) => {
       ON CONFLICT (user_id, contact_id) DO NOTHING
     `, [req.user.id, contactId, name || null]);
 
-    res.status(201).json({ success: true });
+    // Получаем информацию о добавленном контакте
+    const contactInfo = await query(`
+      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, c.name as custom_name,
+        (SELECT COUNT(*) > 0 FROM devices d 
+         WHERE d.user_id = u.id 
+           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
+      FROM contacts c
+      JOIN users u ON u.id = c.contact_id
+      WHERE c.user_id = $1 AND c.contact_id = $2
+    `, [req.user.id, contactId]);
+
+    res.status(201).json(contactInfo.rows[0] || { success: true });
   } catch (err) {
     logger.error('Error adding contact:', err);
     res.status(500).json({ error: 'Failed to add contact' });
@@ -76,7 +92,10 @@ router.get('/search/:query', async (req, res) => {
   try {
     // Ищем пользователей, которых ещё нет в контактах, и не самого себя
     const users = await query(`
-      SELECT u.id, u.username, u.avatar, u.status
+      SELECT u.id, u.username, u.avatar, u.status,
+        (SELECT COUNT(*) > 0 FROM devices d 
+         WHERE d.user_id = u.id 
+           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
       FROM users u
       WHERE u.username ILIKE $1
         AND u.id != $2
@@ -100,7 +119,10 @@ router.get('/:contactId', async (req, res) => {
 
   try {
     const contact = await query(`
-      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, u.bio, c.name as custom_name
+      SELECT u.id, u.username, u.avatar, u.status, u.last_seen, u.bio, c.name as custom_name,
+        (SELECT COUNT(*) > 0 FROM devices d 
+         WHERE d.user_id = u.id 
+           AND EXISTS (SELECT 1 FROM redis WHERE key = 'online:' || u.id || ':' || d.id)) as online
       FROM contacts c
       JOIN users u ON u.id = c.contact_id
       WHERE c.user_id = $1 AND c.contact_id = $2
@@ -131,6 +153,20 @@ router.put('/:contactId', async (req, res) => {
   } catch (err) {
     logger.error('Error updating contact:', err);
     res.status(500).json({ error: 'Failed to update contact' });
+  }
+});
+
+// ==================== ИМПОРТ КОНТАКТОВ (из телефонной книги - заглушка) ====================
+router.post('/import', async (req, res) => {
+  const { phoneNumbers } = req.body; // массив телефонных номеров
+
+  try {
+    // Здесь можно реализовать поиск пользователей по телефону
+    // Пока просто возвращаем успех
+    res.json({ success: true, imported: 0 });
+  } catch (err) {
+    logger.error('Error importing contacts:', err);
+    res.status(500).json({ error: 'Failed to import contacts' });
   }
 });
 
