@@ -1,4 +1,4 @@
-// index.js – главный файл приложения
+// index.js – точка входа приложения
 
 require('dotenv').config();
 const http = require('http');
@@ -35,6 +35,14 @@ initDatabase()
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    logger.info('HTTP server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully');
   server.close(() => {
     logger.info('HTTP server closed');
     process.exit(0);
