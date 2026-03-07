@@ -1,1850 +1,310 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-  <title>Craheapp · Telegram‑level messenger</title>
-  <!-- Font Awesome 6 (free) -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <!-- Apple‑style emoji picker -->
-  <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@1.21.1/index.js" type="module"></script>
-  <!-- Google Fonts Inter -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CraneApp Messenger</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
-  <style>
-    /* ----- DESIGN SYSTEM (pixel‑perfect, Telegram inspired) ----- */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-      background: #0f1020;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      color: white;
-    }
-
-    #app {
-      width: 100%;
-      height: 100%;
-      max-width: 1600px;
-      max-height: 1000px;
-      display: flex;
-      background: #0f1020;
-      border-radius: 24px;
-      overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
-      border: 1px solid #262a3f;
-      position: relative;
-    }
-
-    /* ----- LAYOUT (3 columns) ----- */
-    .sidebar {
-      width: 320px;
-      background: #1a1c33;
-      border-right: 1px solid #262a3f;
-      display: flex;
-      flex-direction: column;
-      z-index: 10;
-    }
-
-    .chat-area {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      background: #0d0f1f;
-      min-width: 0;
-    }
-
-    .right-panel {
-      width: 420px;
-      background: #1a1c33;
-      border-left: 1px solid #262a3f;
-      transform: translateX(100%);
-      transition: transform 260ms cubic-bezier(0.4, 0.0, 0.2, 1);
-      position: absolute;
-      top: 0;
-      right: 0;
-      height: 100%;
-      z-index: 2000;
-      display: flex;
-      flex-direction: column;
-    }
-    .right-panel.open {
-      transform: translateX(0);
-    }
-
-    /* ----- SIDEBAR HEADER ----- */
-    .sidebar-header {
-      height: 64px;
-      padding: 0 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid #262a3f;
-    }
-    .user-avatar {
-      width: 40px;
-      height: 40px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #5b8cff, #7aa2ff);
-      overflow: hidden;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .user-avatar:hover { transform: scale(1.02); }
-    .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .header-actions {
-      display: flex;
-      gap: 8px;
-    }
-    .header-actions button {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      background: transparent;
-      border: 1px solid #262a3f;
-      color: #a7a9c6;
-      font-size: 20px;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .header-actions button:hover {
-      background: #262a3f;
-      color: white;
-    }
-
-    /* ----- SEARCH ----- */
-    .search-box {
-      padding: 12px 16px;
-      position: relative;
-    }
-    .search-box i {
-      position: absolute;
-      left: 28px;
-      top: 24px;
-      color: #a7a9c6;
-      font-size: 16px;
-      pointer-events: none;
-    }
-    .search-box input {
-      width: 100%;
-      height: 44px;
-      padding: 0 16px 0 42px;
-      background: #0f1020;
-      border: 1px solid #262a3f;
-      border-radius: 22px;
-      color: white;
-      font-size: 15px;
-      outline: none;
-      transition: 120ms;
-    }
-    .search-box input:focus { border-color: #5b8cff; }
-
-    /* ----- TABS (chats / contacts) ----- */
-    .sidebar-tabs {
-      display: flex;
-      padding: 12px 16px;
-      gap: 8px;
-      border-bottom: 1px solid #262a3f;
-    }
-    .tab-btn {
-      flex: 1;
-      height: 44px;
-      background: transparent;
-      border: none;
-      border-radius: 10px;
-      color: #a7a9c6;
-      font-size: 15px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: 120ms;
-      position: relative;
-    }
-    .tab-btn.active {
-      color: white;
-    }
-    .tab-btn.active::after {
-      content: '';
-      position: absolute;
-      bottom: -12px;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: #5b8cff;
-      border-radius: 2px;
-      animation: slideUnderline 180ms;
-    }
-    @keyframes slideUnderline {
-      from { transform: scaleX(0); }
-      to { transform: scaleX(1); }
-    }
-
-    /* ----- CHAT LIST (virtualised style) ----- */
-    .chat-list {
-      flex: 1;
-      overflow-y: auto;
-      padding: 8px 12px;
-      scroll-behavior: smooth;
-    }
-    .chat-item {
-      display: flex;
-      align-items: center;
-      height: 72px;
-      padding: 8px 12px;
-      border-radius: 16px;
-      margin-bottom: 4px;
-      cursor: pointer;
-      transition: 120ms;
-      position: relative;
-    }
-    .chat-item:hover,
-    .chat-item.active {
-      background: #262a3f;
-    }
-    .chat-avatar {
-      width: 48px;
-      height: 48px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, #5b8cff, #7aa2ff);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-weight: 600;
-      font-size: 20px;
-      margin-right: 12px;
-      overflow: hidden;
-      flex-shrink: 0;
-    }
-    .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .chat-info {
-      flex: 1;
-      min-width: 0;
-    }
-    .chat-name {
-      color: white;
-      font-weight: 600;
-      font-size: 16px;
-      margin-bottom: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .chat-last-msg {
-      color: #a7a9c6;
-      font-size: 13px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .chat-time {
-      color: #a7a9c6;
-      font-size: 11px;
-      position: absolute;
-      top: 12px;
-      right: 12px;
-    }
-    .chat-badge {
-      background: #ff4d6d;
-      color: white;
-      font-size: 11px;
-      padding: 2px 6px;
-      border-radius: 10px;
-      position: absolute;
-      bottom: 12px;
-      right: 12px;
-      min-width: 20px;
-      text-align: center;
-    }
-
-    /* ----- CONTACTS LIST (in chats tab when active) ----- */
-    .contact-item {
-      display: flex;
-      align-items: center;
-      height: 64px;
-      padding: 8px 12px;
-      border-radius: 16px;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .contact-item:hover {
-      background: #262a3f;
-    }
-    .contact-avatar {
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #5b8cff, #7aa2ff);
-      overflow: hidden;
-      margin-right: 12px;
-    }
-    .contact-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .contact-info {
-      flex: 1;
-    }
-    .contact-name {
-      color: white;
-      font-weight: 500;
-      margin-bottom: 2px;
-    }
-    .contact-status {
-      color: #a7a9c6;
-      font-size: 13px;
-    }
-
-    /* ----- CHAT HEADER ----- */
-    .chat-header {
-      height: 64px;
-      padding: 0 24px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-bottom: 1px solid #262a3f;
-    }
-    .header-left {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    .header-avatar {
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #5b8cff, #7aa2ff);
-      overflow: hidden;
-    }
-    .header-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .header-info h3 {
-      color: white;
-      font-size: 18px;
-      font-weight: 600;
-    }
-    .header-info p {
-      color: #a7a9c6;
-      font-size: 13px;
-    }
-    .header-actions {
-      display: flex;
-      gap: 12px;
-    }
-    .header-actions button {
-      width: 40px;
-      height: 40px;
-      border-radius: 12px;
-      background: transparent;
-      border: 1px solid #262a3f;
-      color: white;
-      font-size: 20px;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .header-actions button:hover {
-      background: #262a3f;
-      border-color: #5b8cff;
-    }
-
-    /* ----- PINNED BAR ----- */
-    .pinned-bar {
-      height: 44px;
-      padding: 0 24px;
-      background: #1f2340;
-      border-bottom: 1px solid #262a3f;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 14px;
-      color: #a7a9c6;
-    }
-    .pinned-bar i { color: #5b8cff; }
-    .pinned-bar span { cursor: pointer; }
-    .pinned-bar span:hover { text-decoration: underline; }
-    .pinned-bar .close-pin {
-      margin-left: auto;
-      cursor: pointer;
-      color: #a7a9c6;
-    }
-
-    /* ----- MESSAGES CONTAINER (virtual scroll ready) ----- */
-    .messages-container {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      scroll-behavior: smooth;
-    }
-
-    /* ----- MESSAGE BUBBLES ----- */
-    .message {
-      max-width: 70%;
-      display: flex;
-      margin-bottom: 4px;
-      animation: messageAppear 140ms ease;
-    }
-    @keyframes messageAppear {
-      0% { opacity: 0; transform: translateY(8px); }
-      100% { opacity: 1; transform: translateY(0); }
-    }
-    .message.sent { align-self: flex-end; }
-    .message.received { align-self: flex-start; }
-
-    .message-bubble {
-      padding: 10px 16px;
-      border-radius: 18px;
-      position: relative;
-      word-wrap: break-word;
-      transition: 120ms;
-    }
-    .message.sent .message-bubble {
-      background: #5b8cff;
-      color: white;
-      border-bottom-right-radius: 4px;
-    }
-    .message.received .message-bubble {
-      background: #262a3f;
-      color: white;
-      border-bottom-left-radius: 4px;
-    }
-
-    .message-meta {
-      font-size: 11px;
-      color: rgba(255,255,255,0.6);
-      margin-top: 4px;
-      text-align: right;
-      display: flex;
-      justify-content: flex-end;
-      gap: 4px;
-    }
-
-    .message-reply {
-      font-size: 13px;
-      padding: 6px 8px;
-      background: rgba(0,0,0,0.3);
-      border-radius: 8px;
-      margin-bottom: 6px;
-      cursor: pointer;
-      border-left: 3px solid #7aa2ff;
-    }
-
-    .message-media {
-      max-width: 300px;
-      border-radius: 12px;
-      cursor: pointer;
-      margin-top: 4px;
-    }
-    audio, video { max-width: 100%; border-radius: 12px; }
-
-    /* reactions below bubble */
-    .message-reactions {
-      display: flex;
-      gap: 5px;
-      margin-top: 6px;
-      flex-wrap: wrap;
-    }
-    .reaction {
-      background: rgba(255,255,255,0.15);
-      border-radius: 20px;
-      padding: 2px 8px;
-      font-size: 13px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .reaction:hover {
-      background: #5b8cff;
-      transform: scale(1.05);
-    }
-
-    /* ----- COMPOSER ----- */
-    .composer {
-      padding: 16px 24px;
-      border-top: 1px solid #262a3f;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .composer-actions {
-      display: flex;
-      gap: 8px;
-    }
-    .composer-actions button {
-      width: 44px;
-      height: 44px;
-      border-radius: 14px;
-      background: transparent;
-      border: 1px solid #262a3f;
-      color: #a7a9c6;
-      font-size: 22px;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .composer-actions button:hover {
-      background: #262a3f;
-      color: white;
-    }
-    .composer-input {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      background: #262a3f;
-      border-radius: 24px;
-      padding: 0 16px;
-      border: 1px solid #262a3f;
-    }
-    .composer-input input {
-      flex: 1;
-      background: none;
-      border: none;
-      padding: 12px 0;
-      color: white;
-      font-size: 16px;
-      outline: none;
-    }
-    .composer-input input::placeholder { color: #a7a9c6; }
-    .composer-input button {
-      background: none;
-      border: none;
-      color: #a7a9c6;
-      font-size: 24px;
-      cursor: pointer;
-      padding: 0 4px;
-    }
-    .send-btn {
-      width: 52px;
-      height: 52px;
-      border-radius: 18px;
-      background: #5b8cff;
-      border: none;
-      color: white;
-      font-size: 22px;
-      cursor: pointer;
-      transition: 120ms;
-    }
-    .send-btn:hover {
-      background: #7aa2ff;
-      transform: scale(1.03);
-    }
-    .send-btn:active { transform: scale(0.97); }
-    .send-btn:disabled {
-      opacity: 0.4;
-      pointer-events: none;
-    }
-
-    /* ----- REPLY PREVIEW (above composer) ----- */
-    .reply-preview {
-      height: 48px;
-      background: #1f2340;
-      border-left: 4px solid #7aa2ff;
-      padding: 8px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-size: 14px;
-      color: white;
-      border-bottom: 1px solid #262a3f;
-    }
-    .reply-preview .close-reply {
-      margin-left: auto;
-      cursor: pointer;
-      color: #a7a9c6;
-    }
-
-    /* ----- RIGHT PANEL HEADER & CONTENT ----- */
-    .right-panel-header {
-      height: 64px;
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      border-bottom: 1px solid #262a3f;
-    }
-    .right-panel-header .back-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: transparent;
-      border: 1px solid #262a3f;
-      color: white;
-      cursor: pointer;
-    }
-    .right-panel-header .back-btn:hover { background: #262a3f; }
-    .right-panel-header h2 {
-      color: white;
-      font-size: 20px;
-      font-weight: 600;
-    }
-    .right-panel-content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 20px;
-    }
-
-    /* ----- SETTINGS ROWS / PROFILE CARD ----- */
-    .profile-card {
-      height: 110px;
-      padding: 20px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      border-bottom: 1px solid #262a3f;
-    }
-    .profile-avatar {
-      width: 72px;
-      height: 72px;
-      border-radius: 20px;
-      background: linear-gradient(135deg, #5b8cff, #7aa2ff);
-      overflow: hidden;
-    }
-    .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-    .profile-info { flex: 1; }
-    .profile-name { color: white; font-size: 18px; font-weight: 600; }
-    .profile-bio { color: #a7a9c6; font-size: 13px; }
-    .edit-profile-btn {
-      height: 36px;
-      padding: 0 14px;
-      border-radius: 10px;
-      background: #262a3f;
-      border: 1px solid #262a3f;
-      color: white;
-      cursor: pointer;
-    }
-    .settings-row {
-      height: 60px;
-      padding: 0 20px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      cursor: pointer;
-      border-radius: 12px;
-      transition: 120ms;
-    }
-    .settings-row:hover { background: #262a3f; }
-    .settings-row i { width: 24px; color: #5b8cff; }
-    .settings-row .label { color: white; font-size: 16px; }
-    .settings-row .value { margin-left: auto; color: #a7a9c6; }
-
-    /* ----- TOGGLE SWITCH ----- */
-    .switch {
-      width: 44px;
-      height: 24px;
-      border-radius: 12px;
-      background: #262a3f;
-      position: relative;
-      cursor: pointer;
-      transition: 200ms;
-    }
-    .switch.active { background: #5b8cff; }
-    .switch::before {
-      content: '';
-      width: 20px;
-      height: 20px;
-      border-radius: 10px;
-      background: white;
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      transition: 200ms;
-    }
-    .switch.active::before { left: 22px; }
-
-    /* ----- INPUT FIELD ----- */
-    .input-field {
-      width: 100%;
-      padding: 14px 16px;
-      background: #0f1020;
-      border: 1px solid #262a3f;
-      border-radius: 16px;
-      color: white;
-      font-size: 16px;
-      margin-bottom: 16px;
-    }
-
-    /* ----- CONTEXT MENU ----- */
-    .context-menu {
-      position: fixed;
-      width: 200px;
-      background: #1f2340;
-      border: 1px solid #262a3f;
-      border-radius: 12px;
-      padding: 6px 0;
-      z-index: 3000;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    }
-    .context-menu-item {
-      height: 36px;
-      padding: 0 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      cursor: pointer;
-      color: white;
-      transition: 120ms;
-    }
-    .context-menu-item:hover { background: #5b8cff; }
-    .context-menu-item i { width: 18px; }
-
-    /* ----- MODALS (auth, etc.) ----- */
-    .modal-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.8);
-      backdrop-filter: blur(8px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 10000;
-    }
-    .modal-card {
-      background: #1f2340;
-      border-radius: 28px;
-      width: 460px;
-      max-width: 90%;
-      max-height: 80vh;
-      overflow-y: auto;
-      padding: 30px;
-      border: 1px solid #262a3f;
-      color: white;
-    }
-    .modal-card h2 { margin-bottom: 24px; font-size: 24px; }
-    .modal-card input, .modal-card textarea {
-      width: 100%;
-      padding: 14px 16px;
-      background: #0f1020;
-      border: 1px solid #262a3f;
-      border-radius: 16px;
-      color: white;
-      font-size: 16px;
-      margin-bottom: 16px;
-    }
-    .modal-card button {
-      width: 100%;
-      padding: 16px;
-      background: #5b8cff;
-      border: none;
-      border-radius: 18px;
-      color: white;
-      font-weight: 600;
-      font-size: 16px;
-      cursor: pointer;
-      margin-bottom: 12px;
-    }
-    .modal-card .secondary-btn {
-      background: transparent;
-      border: 1px solid #262a3f;
-      color: #a7a9c6;
-    }
-
-    /* ----- EMOJI PICKER (floating) ----- */
-    emoji-picker {
-      position: fixed;
-      bottom: 80px;
-      right: 20px;
-      z-index: 10001;
-    }
-
-    /* ----- TOAST (internal error/status) ----- */
-    .toast {
-      position: fixed;
-      bottom: 30px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #ff4d6d;
-      color: white;
-      padding: 12px 24px;
-      border-radius: 30px;
-      z-index: 10002;
-      font-size: 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-      animation: fadeInOut 3s ease;
-    }
-
-    /* ----- SCROLLBAR (custom) ----- */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.35); }
-
-    /* ----- empty states ----- */
-    .empty-chat, .empty-list {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: #a7a9c6;
-      gap: 20px;
-      text-align: center;
-    }
-    .empty-chat i, .empty-list i { font-size: 64px; color: #5b8cff; }
-    .empty-chat h3, .empty-list h3 { color: white; font-size: 24px; }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/public/style.css">
+  <link rel="icon" type="image/png" href="https://i.ibb.co/QjTkyWfG/85-20260306202001.png">
 </head>
 <body>
-  <div id="app"></div>
-
-  <script type="module">
-    // ---------- PRODUCTION‑GRADE MESSENGER (Telegram style) ----------
-    // ==================== GLOBAL STATE ====================
-    let token = localStorage.getItem('token');
-    let currentUser = null;
-    try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch { currentUser = null; }
-
-    // Core data (simulated backend with localStorage)
-    let users = [];
-    let contacts = [];
-    let chats = [];               // { id, type, name, participants, avatar, lastMessage, unread, pinned, archived, createdAt }
-    let messagesByChat = {};      // { chatId: [message] }
-    let groups = [];
-    let channels = [];
-
-    // UI state
-    let currentChat = null;
-    let replyTo = null;            // { messageId, content, sender }
-    let pinnedMessage = null;
-    let rightPanelOpen = false;
-    let rightPanelHistory = ['main'];
-    let rightPanelPage = 'main';
-    let emojiPicker = null;
-    let contextMenu = null;
-    let searchQuery = '';
-
-    // Constants
-    const BOT_ID = 'craheapp-bot';
-    const BOT_NAME = 'CRAHEAPP.BOT';
-
-    // ==================== HELPER FUNCTIONS ====================
-    function showToast(msg, type = 'info') {
-      const toast = document.createElement('div');
-      toast.className = 'toast';
-      toast.style.background = type === 'error' ? '#ff4d6d' : '#5b8cff';
-      toast.textContent = msg;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
-    }
-
-    // Load initial mock data (in production this would come from backend)
-    function loadMockData() {
-      // users (excluding current)
-      if (users.length === 0) {
-        users = [
-          { id: 'user2', username: 'alice', displayName: 'Alice', avatar: 'https://i.pravatar.cc/150?u=2', bio: 'Hello!' },
-          { id: 'user3', username: 'bob', displayName: 'Bob', avatar: 'https://i.pravatar.cc/150?u=3', bio: 'Hey' },
-          { id: 'user4', username: 'charlie', displayName: 'Charlie', avatar: 'https://i.pravatar.cc/150?u=4', bio: 'Hi' }
-        ];
-      }
-      if (contacts.length === 0) {
-        contacts = users.map(u => ({ id: u.id, username: u.username, displayName: u.displayName, avatar: u.avatar, status: 'online' }));
-      }
-      if (chats.length === 0 && currentUser) {
-        // create some sample chats
-        chats.push({
-          id: 'chat1',
-          type: 'private',
-          name: 'Alice',
-          participants: [currentUser.id, 'user2'],
-          avatar: 'https://i.pravatar.cc/150?u=2',
-          lastMessage: { content: 'Hey!', createdAt: Date.now() - 3600000 },
-          unread: 2,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now() - 7*86400000
-        });
-        chats.push({
-          id: 'chat2',
-          type: 'private',
-          name: 'Bob',
-          participants: [currentUser.id, 'user3'],
-          avatar: 'https://i.pravatar.cc/150?u=3',
-          lastMessage: { content: 'See you later', createdAt: Date.now() - 7200000 },
-          unread: 0,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now() - 5*86400000
-        });
-        // bot chat
-        chats.push({
-          id: BOT_ID,
-          type: 'bot',
-          name: BOT_NAME,
-          participants: [currentUser.id, BOT_ID],
-          avatar: '🤖',
-          lastMessage: { content: 'Ask me anything', createdAt: Date.now() - 1800000 },
-          unread: 1,
-          pinned: true,
-          archived: false,
-          createdAt: Date.now() - 10*86400000
-        });
-        // group
-        chats.push({
-          id: 'group1',
-          type: 'group',
-          name: 'Dev Group',
-          participants: [currentUser.id, 'user2', 'user3'],
-          avatar: 'https://i.pravatar.cc/150?u=group1',
-          lastMessage: { content: 'New update!', createdAt: Date.now() - 300000 },
-          unread: 0,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now() - 30*86400000
-        });
-        // channel
-        chats.push({
-          id: 'channel1',
-          type: 'channel',
-          name: 'Tech News',
-          participants: [currentUser.id],
-          avatar: 'https://i.pravatar.cc/150?u=channel1',
-          lastMessage: { content: 'Post #42', createdAt: Date.now() - 600000 },
-          unread: 3,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now() - 60*86400000
-        });
-      }
-      if (Object.keys(messagesByChat).length === 0 && currentUser) {
-        messagesByChat['chat1'] = [
-          { id: 'm1', chatId: 'chat1', senderId: 'user2', content: 'Hey, how are you?', type: 'text', createdAt: Date.now() - 3600000, edited: false, reactions: { '👍': ['user2'] } },
-          { id: 'm2', chatId: 'chat1', senderId: currentUser.id, content: 'I\'m good, thanks!', type: 'text', createdAt: Date.now() - 3500000, edited: false, reactions: {} },
-          { id: 'm3', chatId: 'chat1', senderId: 'user2', content: 'Check this out', type: 'image', mediaUrl: 'https://picsum.photos/300/200?1', createdAt: Date.now() - 3400000, edited: false, reactions: {} }
-        ];
-        messagesByChat['chat2'] = [
-          { id: 'm4', chatId: 'chat2', senderId: 'user3', content: 'Meeting at 5', type: 'text', createdAt: Date.now() - 7200000, edited: false, reactions: {} }
-        ];
-        messagesByChat[BOT_ID] = [
-          { id: 'b1', chatId: BOT_ID, senderId: BOT_ID, content: '👋 I\'m your AI assistant. Ask me anything!', type: 'text', createdAt: Date.now() - 1800000, edited: false, reactions: {} }
-        ];
-      }
-    }
-
-    // ==================== AUTH MODAL ====================
-    function showAuthModal() {
-      const overlay = document.createElement('div');
-      overlay.className = 'modal-overlay';
-      overlay.innerHTML = `
-        <div class="modal-card">
-          <h2 id="authTitle">Login</h2>
-          <input type="text" id="authUsername" placeholder="Username" autocomplete="off">
-          <input type="password" id="authPassword" placeholder="Password">
-          <div id="registerFields" style="display: none;">
-            <input type="password" id="authConfirm" placeholder="Confirm password">
-          </div>
-          <button id="authActionBtn">Login</button>
-          <button class="secondary-btn" id="authToggleBtn">Create account</button>
-          <button class="secondary-btn" id="closeAuthModal">Cancel</button>
+  <div id="app">
+    <!-- ==================== ЭКРАН АВТОРИЗАЦИИ ==================== -->
+    <div id="auth-screen" class="screen active">
+      <div class="auth-container pixel-panel">
+        <img src="https://i.ibb.co/QjTkyWfG/85-20260306202001.png" alt="CraneApp Logo" class="logo">
+        <h1 class="pixel-title">CraneApp</h1>
+        <div class="tabs">
+          <button class="tab active" data-tab="login">Login</button>
+          <button class="tab" data-tab="register">Register</button>
         </div>
-      `;
-      document.body.appendChild(overlay);
-
-      let isLogin = true;
-      const title = document.getElementById('authTitle');
-      const username = document.getElementById('authUsername');
-      const password = document.getElementById('authPassword');
-      const confirm = document.getElementById('authConfirm');
-      const registerFields = document.getElementById('registerFields');
-      const actionBtn = document.getElementById('authActionBtn');
-      const toggleBtn = document.getElementById('authToggleBtn');
-      const closeBtn = document.getElementById('closeAuthModal');
-
-      toggleBtn.addEventListener('click', () => {
-        isLogin = !isLogin;
-        title.textContent = isLogin ? 'Login' : 'Register';
-        actionBtn.textContent = isLogin ? 'Login' : 'Register';
-        registerFields.style.display = isLogin ? 'none' : 'block';
-        toggleBtn.textContent = isLogin ? 'Create account' : 'Back to login';
-      });
-
-      actionBtn.addEventListener('click', async () => {
-        const uname = username.value.trim();
-        const pwd = password.value;
-        if (!uname || !pwd) return showToast('Fill all fields', 'error');
-        if (!isLogin && pwd !== confirm.value) return showToast('Passwords do not match', 'error');
-        // simulate registration/login
-        if (isLogin) {
-          // simple mock: any username/password works
-          currentUser = {
-            id: 'user1',
-            username: uname,
-            displayName: uname,
-            avatar: `https://ui-avatars.com/api/?name=${uname}&background=5b8cff&color=fff`,
-            bio: ''
-          };
-        } else {
-          currentUser = {
-            id: 'user1',
-            username: uname,
-            displayName: uname,
-            avatar: `https://ui-avatars.com/api/?name=${uname}&background=5b8cff&color=fff`,
-            bio: ''
-          };
-        }
-        token = 'mock-jwt-token';
-        localStorage.setItem('token', token);
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        overlay.remove();
-        loadMockData();
-        renderApp();
-      });
-
-      closeBtn.addEventListener('click', () => overlay.remove());
-    }
-
-    // ==================== RENDER APP ====================
-    function renderApp() {
-      if (!currentUser) {
-        showAuthModal();
-        return;
-      }
-
-      const app = document.getElementById('app');
-      app.innerHTML = `
-        <!-- Left Sidebar -->
-        <div class="sidebar">
-          <div class="sidebar-header">
-            <div class="user-avatar" id="sidebarAvatar">
-              <img src="${currentUser.avatar}" alt="">
-            </div>
-            <div class="header-actions">
-              <button id="newChatBtn"><i class="fas fa-plus"></i></button>
-              <button id="contactsBtn"><i class="fas fa-address-book"></i></button>
-              <button id="settingsBtn"><i class="fas fa-cog"></i></button>
-            </div>
+        
+        <!-- Форма входа -->
+        <div id="login-form" class="auth-form active">
+          <input type="text" id="login-username" placeholder="Username" class="pixel-input" autocomplete="username">
+          <input type="password" id="login-password" placeholder="Password" class="pixel-input" autocomplete="current-password">
+          <div id="login-2fa-section" style="display: none;">
+            <input type="text" id="login-2fa" placeholder="2FA Code" class="pixel-input">
           </div>
-          <div class="search-box">
-            <i class="fas fa-search"></i>
-            <input type="text" id="searchInput" placeholder="Search...">
-          </div>
-          <div class="sidebar-tabs">
-            <button class="tab-btn active" data-tab="chats"><i class="fas fa-comment"></i> Chats</button>
-            <button class="tab-btn" data-tab="contacts"><i class="fas fa-address-book"></i> Contacts</button>
-          </div>
-          <div class="chat-list" id="chatList"></div>
+          <button id="login-btn" class="pixel-button primary">Log in</button>
+          <button id="login-with-token" class="pixel-button" style="display: none;">Use saved token</button>
         </div>
+        
+        <!-- Форма регистрации -->
+        <div id="register-form" class="auth-form">
+          <input type="text" id="reg-username" placeholder="Username" class="pixel-input" autocomplete="username">
+          <input type="password" id="reg-password" placeholder="Password (min 8 chars)" class="pixel-input" autocomplete="new-password">
+          <input type="password" id="reg-password2" placeholder="Confirm password" class="pixel-input" autocomplete="new-password">
+          <button id="register-btn" class="pixel-button primary">Register</button>
+        </div>
+        
+        <div id="auth-error" class="error-message"></div>
+        <div id="auth-loading" class="loading-spinner" style="display: none;">Loading...</div>
+      </div>
+    </div>
 
-        <!-- Main Chat Area -->
-        <div class="chat-area">
-          <div class="chat-header">
-            <div class="header-left">
-              <div class="header-avatar" id="headerAvatar"><img src="" alt=""></div>
-              <div class="header-info">
-                <h3 id="headerName">Select a chat</h3>
-                <p id="headerStatus"></p>
-              </div>
-            </div>
-            <div class="header-actions">
-              <button id="callBtn" title="Voice call"><i class="fas fa-phone"></i></button>
-              <button id="videoCallBtn" title="Video call"><i class="fas fa-video"></i></button>
-              <button id="searchChatBtn" title="Search in chat"><i class="fas fa-search"></i></button>
-              <button id="menuChatBtn" title="Chat menu"><i class="fas fa-ellipsis-v"></i></button>
-            </div>
+    <!-- ==================== ОСНОВНОЙ ЭКРАН МЕССЕНДЖЕРА ==================== -->
+    <div id="main-screen" class="screen" style="display: none;">
+      <!-- Левая боковая панель (sidebar) для десктопа -->
+      <div class="sidebar">
+        <div class="logo" onclick="UI.switchView('chats')" title="Go to chats">
+          <img src="https://i.ibb.co/QjTkyWfG/85-20260306202001.png" alt="CraneApp">
+        </div>
+        <div class="sidebar-menu">
+          <div class="sidebar-item" data-view="chats" onclick="UI.switchView('chats')" title="Chats">
+            <span class="icon">💬</span>
+            <span class="badge" id="chats-badge">0</span>
           </div>
-
-          <div id="pinnedBar" class="pinned-bar" style="display: none;"></div>
-
-          <div id="messagesContainer" class="messages-container"></div>
-
-          <div id="replyPreview" class="reply-preview" style="display: none;"></div>
-
-          <div class="composer">
-            <div class="composer-actions">
-              <button id="emojiBtn"><i class="fas fa-smile"></i></button>
-              <button id="attachBtn"><i class="fas fa-paperclip"></i></button>
-              <button id="voiceBtn"><i class="fas fa-microphone"></i></button>
-            </div>
-            <div class="composer-input">
-              <input type="text" id="messageInput" placeholder="Message..." autocomplete="off" disabled>
-              <button id="sendBtn" class="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
-            </div>
+          <div class="sidebar-item" data-view="contacts" onclick="UI.switchView('contacts')" title="Contacts">
+            <span class="icon">👤</span>
+          </div>
+          <div class="sidebar-item" data-view="calls" onclick="UI.switchView('calls')" title="Calls">
+            <span class="icon">📞</span>
+          </div>
+          <div class="sidebar-item" data-view="channels" onclick="UI.switchView('channels')" title="Channels">
+            <span class="icon">📢</span>
+          </div>
+          <div class="sidebar-item" data-view="settings" onclick="UI.switchView('settings')" title="Settings">
+            <span class="icon">⚙</span>
+          </div>
+          <div class="sidebar-item profile" onclick="UI.openProfile()" title="Profile">
+            <img id="sidebar-avatar" src="https://i.ibb.co/QjTkyWfG/85-20260306202001.png" alt="Profile">
           </div>
         </div>
+      </div>
 
-        <!-- Right Panel -->
-        <div class="right-panel" id="rightPanel">
-          <div class="right-panel-header">
-            <button class="back-btn" id="rightPanelBack"><i class="fas fa-arrow-left"></i></button>
-            <h2 id="rightPanelTitle">Settings</h2>
-          </div>
-          <div class="right-panel-content" id="rightPanelContent"></div>
+      <!-- Панель списка чатов -->
+      <div class="chat-list-panel">
+        <div class="panel-header">
+          <h2>Chats</h2>
+          <button class="new-chat-btn pixel-button small" onclick="UI.showCreateChatModal()" title="New chat">+</button>
         </div>
-      `;
+        <div class="search-box">
+          <input type="text" id="chat-search" placeholder="Search chats..." class="pixel-input" oninput="UI.onSearchInput(event)">
+        </div>
+        <div class="chat-list" id="chat-list"></div>
+      </div>
 
-      // Attach global listeners
-      document.getElementById('sidebarAvatar').addEventListener('click', () => openRightPanel('profile'));
-      document.getElementById('newChatBtn').addEventListener('click', showNewChatModal);
-      document.getElementById('contactsBtn').addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn')[0].classList.remove('active');
-        document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        renderContactsList();
-      });
-      document.getElementById('settingsBtn').addEventListener('click', () => openRightPanel('main'));
-      document.getElementById('callBtn').addEventListener('click', () => { if (currentChat) showToast('Voice call coming soon'); });
-      document.getElementById('videoCallBtn').addEventListener('click', () => { if (currentChat) showToast('Video call coming soon'); });
-      document.getElementById('searchChatBtn').addEventListener('click', toggleChatSearch);
-      document.getElementById('menuChatBtn').addEventListener('click', showChatMenu);
-      document.getElementById('emojiBtn').addEventListener('click', showEmojiPicker);
-      document.getElementById('attachBtn').addEventListener('click', attachFile);
-      document.getElementById('voiceBtn').addEventListener('click', startVoiceRecording);
-      document.getElementById('sendBtn').addEventListener('click', sendMessage);
-      document.getElementById('messageInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') sendMessage();
-      });
-      document.getElementById('messageInput').addEventListener('input', () => {
-        document.getElementById('sendBtn').disabled = !(currentChat && document.getElementById('messageInput').value.trim());
-      });
-      document.getElementById('searchInput').addEventListener('input', (e) => {
-        searchQuery = e.target.value;
-        if (document.querySelector('.tab-btn.active').dataset.tab === 'chats') renderChatList();
-        else renderContactsList();
-      });
-      document.getElementById('rightPanelBack').addEventListener('click', rightPanelGoBack);
-
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-          e.target.classList.add('active');
-          if (e.target.dataset.tab === 'chats') renderChatList();
-          else renderContactsList();
-        });
-      });
-
-      // Initial render
-      renderChatList();
-      renderMessages();
-    }
-
-    // ==================== CHAT LIST ====================
-    function renderChatList() {
-      const list = document.getElementById('chatList');
-      if (!list) return;
-      list.innerHTML = '';
-      let filtered = chats.filter(c => !c.archived);
-      if (searchQuery) {
-        filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
-      }
-      // sort by pinned then last activity
-      filtered.sort((a,b) => {
-        if (a.pinned && !b.pinned) return -1;
-        if (!a.pinned && b.pinned) return 1;
-        return (b.lastMessage?.createdAt || 0) - (a.lastMessage?.createdAt || 0);
-      });
-      filtered.forEach(chat => {
-        const chatName = chat.name || (chat.participants?.find(p => p !== currentUser.id) ? 'User' : 'Unknown');
-        const lastMsg = chat.lastMessage?.content || '';
-        const time = chat.lastMessage ? new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
-        const unread = chat.unread || 0;
-        const avatar = chat.avatar || `https://ui-avatars.com/api/?name=${chatName}&background=5b8cff&color=fff`;
-        const item = document.createElement('div');
-        item.className = `chat-item ${currentChat?.id === chat.id ? 'active' : ''}`;
-        item.dataset.id = chat.id;
-        item.innerHTML = `
-          <div class="chat-avatar">${chat.type==='bot' ? '🤖' : `<img src="${avatar}">`}</div>
+      <!-- Окно чата -->
+      <div id="chat-window" class="chat-window" style="display: none;">
+        <div class="chat-header">
+          <button class="back-btn pixel-button icon" onclick="UI.closeChat()" title="Back">←</button>
+          <img id="chat-avatar" src="https://i.ibb.co/QjTkyWfG/85-20260306202001.png" alt="" class="chat-avatar">
           <div class="chat-info">
-            <div class="chat-name">${chatName}</div>
-            <div class="chat-last-msg">${lastMsg}</div>
+            <h3 id="chat-name"></h3>
+            <span id="chat-status" class="status"></span>
           </div>
-          <div class="chat-time">${time}</div>
-          ${unread ? `<div class="chat-badge">${unread}</div>` : ''}
-        `;
-        item.addEventListener('click', () => selectChat(chat));
-        list.appendChild(item);
-      });
-    }
-
-    function renderContactsList() {
-      const list = document.getElementById('chatList');
-      list.innerHTML = '';
-      let filtered = contacts;
-      if (searchQuery) {
-        filtered = filtered.filter(c => c.username.toLowerCase().includes(searchQuery.toLowerCase()));
-      }
-      if (filtered.length === 0) {
-        list.innerHTML = '<div class="empty-list"><i class="fas fa-address-book"></i><h3>No contacts</h3></div>';
-        return;
-      }
-      filtered.forEach(contact => {
-        const item = document.createElement('div');
-        item.className = 'contact-item';
-        item.innerHTML = `
-          <div class="contact-avatar"><img src="${contact.avatar}"></div>
-          <div class="contact-info">
-            <div class="contact-name">${contact.displayName || contact.username}</div>
-            <div class="contact-status">online</div>
-          </div>
-        `;
-        item.addEventListener('click', () => startDirectChat(contact));
-        list.appendChild(item);
-      });
-    }
-
-    // ==================== CHAT SELECTION ====================
-    function selectChat(chat) {
-      currentChat = chat;
-      replyTo = null;
-      pinnedMessage = null;
-      document.getElementById('replyPreview').style.display = 'none';
-      document.getElementById('pinnedBar').style.display = 'none';
-      document.getElementById('headerName').textContent = chat.name || 'Chat';
-      const avatarEl = document.getElementById('headerAvatar');
-      if (chat.type === 'bot') avatarEl.innerHTML = '<span style="font-size:28px;">🤖</span>';
-      else avatarEl.innerHTML = `<img src="${chat.avatar || `https://ui-avatars.com/api/?name=${chat.name}&background=5b8cff&color=fff`}">`;
-      document.getElementById('headerStatus').textContent = 'online';
-      document.getElementById('messageInput').disabled = false;
-      document.getElementById('messageInput').focus();
-      // load messages from store
-      renderMessages();
-      // mark as read (decrease unread)
-      if (chat.unread) {
-        chat.unread = 0;
-        renderChatList();
-      }
-    }
-
-    function renderMessages() {
-      const container = document.getElementById('messagesContainer');
-      if (!currentChat) {
-        container.innerHTML = `<div class="empty-chat"><i class="fas fa-comment"></i><h3>Select a chat</h3></div>`;
-        return;
-      }
-      const msgs = messagesByChat[currentChat.id] || [];
-      container.innerHTML = '';
-      msgs.forEach(msg => {
-        const div = document.createElement('div');
-        div.className = `message ${msg.senderId === currentUser.id ? 'sent' : 'received'}`;
-        div.dataset.id = msg.id;
-        const time = new Date(msg.createdAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-        let mediaHtml = '';
-        if (msg.type === 'image' && msg.mediaUrl) {
-          mediaHtml = `<img src="${msg.mediaUrl}" class="message-media" onclick="window.open('${msg.mediaUrl}')">`;
-        } else if (msg.type === 'video' && msg.mediaUrl) {
-          mediaHtml = `<video src="${msg.mediaUrl}" controls class="message-media"></video>`;
-        } else if (msg.type === 'file' && msg.mediaUrl) {
-          const fileName = msg.mediaUrl.split('/').pop();
-          mediaHtml = `<a href="${msg.mediaUrl}" target="_blank" style="display:flex; align-items:center; gap:8px; color:white;"><i class="fas fa-file"></i> ${fileName}</a>`;
-        } else if (msg.type === 'voice' && msg.mediaUrl) {
-          mediaHtml = `<audio src="${msg.mediaUrl}" controls></audio>`;
-        }
-        const replyHtml = msg.replyTo ? `<div class="message-reply" data-reply-id="${msg.replyTo}">Replying</div>` : '';
-        const reactionsHtml = Object.entries(msg.reactions || {}).map(([emoji, users]) =>
-          `<span class="reaction" data-emoji="${emoji}" data-msg-id="${msg.id}">${emoji} ${users.length}</span>`
-        ).join('');
-        div.innerHTML = `
-          <div class="message-bubble">
-            ${replyHtml}
-            ${mediaHtml}
-            <span>${msg.content || ''}</span>
-            <div class="message-meta">
-              <span>${time}</span>
-              ${msg.edited ? '<span>(edited)</span>' : ''}
-              ${msg.senderId === currentUser.id ? `<i class="fas fa-check-double" style="color:${msg.read ? '#5b8cff' : '#a7a9c6'};"></i>` : ''}
-            </div>
-            <div class="message-reactions">${reactionsHtml}</div>
-          </div>
-        `;
-        div.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          showContextMenu(e.pageX, e.pageY, msg);
-        });
-        container.appendChild(div);
-      });
-      container.scrollTop = container.scrollHeight;
-    }
-
-    // ==================== MESSAGE ACTIONS ====================
-    function showContextMenu(x, y, msg) {
-      if (contextMenu) contextMenu.remove();
-      const menu = document.createElement('div');
-      menu.className = 'context-menu';
-      menu.style.top = `${y}px`;
-      menu.style.left = `${x}px`;
-      menu.innerHTML = `
-        <div class="context-menu-item" data-action="reply"><i class="fas fa-reply"></i> Reply</div>
-        <div class="context-menu-item" data-action="copy"><i class="fas fa-copy"></i> Copy</div>
-        ${msg.senderId === currentUser.id ? `<div class="context-menu-item" data-action="edit"><i class="fas fa-edit"></i> Edit</div>` : ''}
-        <div class="context-menu-item" data-action="forward"><i class="fas fa-share"></i> Forward</div>
-        <div class="context-menu-item" data-action="pin"><i class="fas fa-thumbtack"></i> Pin</div>
-        ${msg.senderId === currentUser.id ? `<div class="context-menu-item" data-action="delete"><i class="fas fa-trash"></i> Delete</div>` : ''}
-      `;
-      menu.addEventListener('click', (e) => {
-        const action = e.target.closest('.context-menu-item')?.dataset.action;
-        if (!action) return;
-        menu.remove();
-        contextMenu = null;
-        if (action === 'reply') {
-          replyTo = { messageId: msg.id, content: msg.content, sender: msg.senderId };
-          document.getElementById('replyPreview').style.display = 'flex';
-          document.getElementById('replyPreview').innerHTML = `
-            <i class="fas fa-reply"></i>
-            <span>Replying to ${msg.senderId === currentUser.id ? 'yourself' : 'user'}</span>
-            <span style="color:#a7a9c6; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${msg.content || 'media'}</span>
-            <i class="fas fa-times close-reply"></i>
-          `;
-          document.getElementById('replyPreview').querySelector('.close-reply').addEventListener('click', () => {
-            replyTo = null;
-            document.getElementById('replyPreview').style.display = 'none';
-          });
-        } else if (action === 'copy') {
-          navigator.clipboard?.writeText(msg.content || '');
-          showToast('Copied');
-        } else if (action === 'edit') {
-          const newText = prompt('Edit message:', msg.content);
-          if (newText && newText !== msg.content) {
-            msg.content = newText;
-            msg.edited = true;
-            renderMessages();
-          }
-        } else if (action === 'forward') {
-          showToast('Forward – select a chat (mock)');
-        } else if (action === 'pin') {
-          pinnedMessage = msg;
-          document.getElementById('pinnedBar').style.display = 'flex';
-          document.getElementById('pinnedBar').innerHTML = `
-            <i class="fas fa-thumbtack"></i>
-            <span>${msg.content || 'Pinned message'}</span>
-            <i class="fas fa-times close-pin"></i>
-          `;
-          document.getElementById('pinnedBar').querySelector('.close-pin').addEventListener('click', () => {
-            pinnedMessage = null;
-            document.getElementById('pinnedBar').style.display = 'none';
-          });
-          document.getElementById('pinnedBar').querySelector('span').addEventListener('click', () => {
-            const msgEl = document.querySelector(`[data-id="${msg.id}"]`);
-            if (msgEl) msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          });
-        } else if (action === 'delete') {
-          const idx = messagesByChat[currentChat.id].findIndex(m => m.id === msg.id);
-          if (idx !== -1) messagesByChat[currentChat.id].splice(idx, 1);
-          renderMessages();
-        }
-      });
-      document.body.appendChild(menu);
-      contextMenu = menu;
-      setTimeout(() => {
-        document.addEventListener('click', function rm() {
-          if (contextMenu) { contextMenu.remove(); contextMenu = null; }
-          document.removeEventListener('click', rm);
-        }, { once: true });
-      }, 10);
-    }
-
-    // ==================== SEND MESSAGE ====================
-    function sendMessage() {
-      const input = document.getElementById('messageInput');
-      const text = input.value.trim();
-      if (!text || !currentChat) return;
-
-      const newMsg = {
-        id: 'msg_' + Date.now(),
-        chatId: currentChat.id,
-        senderId: currentUser.id,
-        content: text,
-        type: 'text',
-        mediaUrl: null,
-        createdAt: Date.now(),
-        edited: false,
-        reactions: {},
-        replyTo: replyTo?.messageId || null,
-        read: false
-      };
-      if (!messagesByChat[currentChat.id]) messagesByChat[currentChat.id] = [];
-      messagesByChat[currentChat.id].push(newMsg);
-      // update chat last message
-      currentChat.lastMessage = { content: text, createdAt: Date.now() };
-      currentChat.unread = 0;
-      renderMessages();
-      input.value = '';
-      document.getElementById('sendBtn').disabled = true;
-      replyTo = null;
-      document.getElementById('replyPreview').style.display = 'none';
-      // simulate reply from bot if bot chat
-      if (currentChat.id === BOT_ID) {
-        setTimeout(() => {
-          const botMsg = {
-            id: 'bot_' + Date.now(),
-            chatId: BOT_ID,
-            senderId: BOT_ID,
-            content: 'Thanks for your message! I am a simple bot.',
-            type: 'text',
-            createdAt: Date.now(),
-            edited: false,
-            reactions: {}
-          };
-          messagesByChat[BOT_ID].push(botMsg);
-          renderMessages();
-        }, 500);
-      }
-    }
-
-    // ==================== ATTACH FILE ====================
-    function attachFile() {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'image/*,video/*,audio/*';
-      input.onchange = () => {
-        const file = input.files[0];
-        if (!file || !currentChat) return;
-        // simulate upload by using object URL
-        const url = URL.createObjectURL(file);
-        let type = 'file';
-        if (file.type.startsWith('image/')) type = 'image';
-        else if (file.type.startsWith('video/')) type = 'video';
-        else if (file.type.startsWith('audio/')) type = 'voice';
-        const newMsg = {
-          id: 'msg_' + Date.now(),
-          chatId: currentChat.id,
-          senderId: currentUser.id,
-          content: '',
-          type: type,
-          mediaUrl: url,
-          createdAt: Date.now(),
-          edited: false,
-          reactions: {}
-        };
-        if (!messagesByChat[currentChat.id]) messagesByChat[currentChat.id] = [];
-        messagesByChat[currentChat.id].push(newMsg);
-        renderMessages();
-      };
-      input.click();
-    }
-
-    function startVoiceRecording() {
-      showToast('Voice recording – mock (would use MediaRecorder)');
-    }
-
-    // ==================== EMOJI PICKER ====================
-    function showEmojiPicker() {
-      if (!emojiPicker) {
-        emojiPicker = document.createElement('emoji-picker');
-        emojiPicker.addEventListener('emoji-click', e => {
-          document.getElementById('messageInput').value += e.detail.unicode;
-          document.getElementById('sendBtn').disabled = false;
-          emojiPicker.remove();
-          emojiPicker = null;
-        });
-        document.body.appendChild(emojiPicker);
-      } else {
-        emojiPicker.remove();
-        emojiPicker = null;
-      }
-    }
-
-    // ==================== SEARCH IN CHAT ====================
-    function toggleChatSearch() {
-      showToast('Search in chat – mock');
-    }
-
-    // ==================== NEW CHAT MODAL ====================
-    function showNewChatModal() {
-      const modal = document.createElement('div');
-      modal.className = 'modal-overlay';
-      modal.innerHTML = `
-        <div class="modal-card">
-          <h2>New Chat</h2>
-          <button id="newPrivateBtn"><i class="fas fa-user"></i> Private chat</button>
-          <button id="newGroupBtn"><i class="fas fa-users"></i> New group</button>
-          <button id="newChannelBtn"><i class="fas fa-bullhorn"></i> New channel</button>
-          <button class="secondary-btn" id="closeModalBtn">Cancel</button>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      document.getElementById('newPrivateBtn').addEventListener('click', () => {
-        modal.remove();
-        showContactPicker();
-      });
-      document.getElementById('newGroupBtn').addEventListener('click', () => {
-        modal.remove();
-        showCreateGroupModal();
-      });
-      document.getElementById('newChannelBtn').addEventListener('click', () => {
-        modal.remove();
-        showCreateChannelModal();
-      });
-      document.getElementById('closeModalBtn').addEventListener('click', () => modal.remove());
-    }
-
-    function showContactPicker() {
-      const modal = document.createElement('div');
-      modal.className = 'modal-overlay';
-      modal.innerHTML = `
-        <div class="modal-card" style="width:500px;">
-          <h2>Select contact</h2>
-          <div style="max-height:300px; overflow-y:auto;" id="contactList"></div>
-          <button class="secondary-btn" id="closeContactPicker">Cancel</button>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      const listDiv = document.getElementById('contactList');
-      contacts.forEach(contact => {
-        const btn = document.createElement('button');
-        btn.style.marginBottom = '8px';
-        btn.innerHTML = `<i class="fas fa-user"></i> ${contact.displayName || contact.username}`;
-        btn.addEventListener('click', () => {
-          startDirectChat(contact);
-          modal.remove();
-        });
-        listDiv.appendChild(btn);
-      });
-      document.getElementById('closeContactPicker').addEventListener('click', () => modal.remove());
-    }
-
-    function startDirectChat(contact) {
-      const existing = chats.find(c => c.type === 'private' && c.participants?.includes(contact.id));
-      if (existing) {
-        selectChat(existing);
-      } else {
-        const newChat = {
-          id: 'chat_' + Date.now(),
-          type: 'private',
-          name: contact.displayName || contact.username,
-          participants: [currentUser.id, contact.id],
-          avatar: contact.avatar,
-          lastMessage: null,
-          unread: 0,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now()
-        };
-        chats.push(newChat);
-        renderChatList();
-        selectChat(newChat);
-      }
-    }
-
-    function showCreateGroupModal() {
-      const modal = document.createElement('div');
-      modal.className = 'modal-overlay';
-      modal.innerHTML = `
-        <div class="modal-card">
-          <h2>Create Group</h2>
-          <input type="text" id="groupName" placeholder="Group name">
-          <textarea id="groupDesc" placeholder="Description" rows="3"></textarea>
-          <button id="createGroupBtn">Create</button>
-          <button class="secondary-btn" id="closeGroupModal">Cancel</button>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      document.getElementById('createGroupBtn').addEventListener('click', () => {
-        const name = document.getElementById('groupName').value.trim();
-        if (!name) return showToast('Group name required', 'error');
-        const newGroup = {
-          id: 'group_' + Date.now(),
-          type: 'group',
-          name: name,
-          participants: [currentUser.id],
-          avatar: `https://ui-avatars.com/api/?name=${name}&background=5b8cff&color=fff`,
-          lastMessage: null,
-          unread: 0,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now(),
-          description: document.getElementById('groupDesc').value
-        };
-        chats.push(newGroup);
-        renderChatList();
-        selectChat(newGroup);
-        modal.remove();
-      });
-      document.getElementById('closeGroupModal').addEventListener('click', () => modal.remove());
-    }
-
-    function showCreateChannelModal() {
-      const modal = document.createElement('div');
-      modal.className = 'modal-overlay';
-      modal.innerHTML = `
-        <div class="modal-card">
-          <h2>Create Channel</h2>
-          <input type="text" id="channelName" placeholder="Channel name">
-          <textarea id="channelDesc" placeholder="Description" rows="3"></textarea>
-          <button id="createChannelBtn">Create</button>
-          <button class="secondary-btn" id="closeChannelModal">Cancel</button>
-        </div>
-      `;
-      document.body.appendChild(modal);
-      document.getElementById('createChannelBtn').addEventListener('click', () => {
-        const name = document.getElementById('channelName').value.trim();
-        if (!name) return showToast('Channel name required', 'error');
-        const newChannel = {
-          id: 'channel_' + Date.now(),
-          type: 'channel',
-          name: name,
-          participants: [currentUser.id],
-          avatar: `https://ui-avatars.com/api/?name=${name}&background=5b8cff&color=fff`,
-          lastMessage: null,
-          unread: 0,
-          pinned: false,
-          archived: false,
-          createdAt: Date.now(),
-          description: document.getElementById('channelDesc').value
-        };
-        chats.push(newChannel);
-        renderChatList();
-        selectChat(newChannel);
-        modal.remove();
-      });
-      document.getElementById('closeChannelModal').addEventListener('click', () => modal.remove());
-    }
-
-    // ==================== RIGHT PANEL (SETTINGS, PROFILE) ====================
-    function openRightPanel(page) {
-      rightPanelHistory = [page];
-      rightPanelPage = page;
-      renderRightPanel(page);
-      document.getElementById('rightPanel').classList.add('open');
-    }
-
-    function rightPanelGoBack() {
-      if (rightPanelHistory.length <= 1) {
-        document.getElementById('rightPanel').classList.remove('open');
-      } else {
-        rightPanelHistory.pop();
-        rightPanelPage = rightPanelHistory[rightPanelHistory.length - 1];
-        renderRightPanel(rightPanelPage);
-      }
-    }
-
-    function renderRightPanel(page) {
-      const titleMap = {
-        main: 'Settings',
-        profile: 'Profile',
-        account: 'Account',
-        privacy: 'Privacy',
-        appearance: 'Appearance',
-        chatSettings: 'Chat Settings',
-        dataStorage: 'Data & Storage',
-        advanced: 'Advanced',
-        editProfile: 'Edit Profile',
-        blocked: 'Blocked Users',
-        twofa: 'Two‑Factor Auth',
-        groupInfo: 'Group Info',
-        channelInfo: 'Channel Info'
-      };
-      document.getElementById('rightPanelTitle').textContent = titleMap[page] || 'Settings';
-      const content = document.getElementById('rightPanelContent');
-      content.innerHTML = '';
-
-      if (page === 'main') renderMainSettings(content);
-      else if (page === 'profile') renderProfileView(content);
-      else if (page === 'account') renderAccountSettings(content);
-      else if (page === 'privacy') renderPrivacySettings(content);
-      else if (page === 'appearance') renderAppearanceSettings(content);
-      else if (page === 'chatSettings') renderChatSettings(content);
-      else if (page === 'dataStorage') renderDataStorageSettings(content);
-      else if (page === 'advanced') renderAdvancedSettings(content);
-      else if (page === 'editProfile') renderEditProfile(content);
-      else if (page === 'blocked') renderBlockedUsers(content);
-      else if (page === 'twofa') renderTwoFA(content);
-      else if (page === 'groupInfo' && currentChat) renderGroupInfo(content);
-      else if (page === 'channelInfo' && currentChat) renderChannelInfo(content);
-    }
-
-    function renderMainSettings(container) {
-      container.innerHTML = `
-        <div class="profile-card">
-          <div class="profile-avatar"><img src="${currentUser.avatar}"></div>
-          <div class="profile-info">
-            <div class="profile-name">${currentUser.displayName}</div>
-            <div class="profile-bio">${currentUser.bio || 'Hey there!'}</div>
-          </div>
-          <button class="edit-profile-btn" id="editProfileBtn">Edit</button>
-        </div>
-        <div class="settings-row" data-page="account"><i class="fas fa-user-circle"></i><span class="label">Account</span></div>
-        <div class="settings-row" data-page="privacy"><i class="fas fa-lock"></i><span class="label">Privacy</span></div>
-        <div class="settings-row" data-page="appearance"><i class="fas fa-palette"></i><span class="label">Appearance</span></div>
-        <div class="settings-row" data-page="chatSettings"><i class="fas fa-comment"></i><span class="label">Chat Settings</span></div>
-        <div class="settings-row" data-page="dataStorage"><i class="fas fa-database"></i><span class="label">Data & Storage</span></div>
-        <div class="settings-row" data-page="advanced"><i class="fas fa-code"></i><span class="label">Advanced</span></div>
-        <button class="logout-btn" id="logoutBtn">Log Out</button>
-      `;
-      container.querySelectorAll('.settings-row[data-page]').forEach(row => {
-        row.addEventListener('click', () => {
-          rightPanelHistory.push(row.dataset.page);
-          renderRightPanel(row.dataset.page);
-        });
-      });
-      document.getElementById('editProfileBtn').addEventListener('click', () => {
-        rightPanelHistory.push('editProfile');
-        renderRightPanel('editProfile');
-      });
-      document.getElementById('logoutBtn').addEventListener('click', () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('currentUser');
-        window.location.reload();
-      });
-    }
-
-    function renderProfileView(container) {
-      container.innerHTML = `
-        <div style="text-align:center; margin-bottom:20px;">
-          <img src="${currentUser.avatar}" style="width:100px; height:100px; border-radius:24px;">
-          <h3 style="margin:10px 0 5px;">${currentUser.displayName}</h3>
-          <p style="color:#a7a9c6;">${currentUser.bio || 'No bio'}</p>
-        </div>
-        <div class="settings-row"><i class="fas fa-envelope"></i><span class="label">Email</span><span class="value">${currentUser.email || 'Not set'}</span></div>
-      `;
-    }
-
-    function renderAccountSettings(container) {
-      container.innerHTML = `
-        <div><label>Username</label><input class="input-field" value="${currentUser.username}" id="accUsername"></div>
-        <div><label>Display name</label><input class="input-field" value="${currentUser.displayName}" id="accDisplayName"></div>
-        <div><label>Bio</label><textarea class="input-field" id="accBio">${currentUser.bio || ''}</textarea></div>
-        <button class="edit-profile-btn" id="saveAccount">Save</button>
-      `;
-      document.getElementById('saveAccount').addEventListener('click', () => {
-        currentUser.username = document.getElementById('accUsername').value;
-        currentUser.displayName = document.getElementById('accDisplayName').value;
-        currentUser.bio = document.getElementById('accBio').value;
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        showToast('Saved');
-        rightPanelGoBack();
-      });
-    }
-
-    function renderPrivacySettings(container) {
-      container.innerHTML = `
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Last seen</span><div class="switch" id="switchLastSeen"></div></div>
-        </div>
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Profile photo</span><div class="switch" id="switchPhoto"></div></div>
-        </div>
-        <div class="settings-row" data-page="blocked"><i class="fas fa-ban"></i><span class="label">Blocked Users</span></div>
-      `;
-      document.getElementById('switchLastSeen').addEventListener('click', (e) => e.target.classList.toggle('active'));
-      document.getElementById('switchPhoto').addEventListener('click', (e) => e.target.classList.toggle('active'));
-      container.querySelector('.settings-row').addEventListener('click', () => {
-        rightPanelHistory.push('blocked');
-        renderRightPanel('blocked');
-      });
-    }
-
-    function renderBlockedUsers(container) {
-      container.innerHTML = `<p style="color:#a7a9c6;">No blocked users</p>`;
-    }
-
-    function renderAppearanceSettings(container) {
-      container.innerHTML = `
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Theme</span>
-            <select style="background:#0f1020; color:white; border:1px solid #262a3f; border-radius:8px; padding:8px;">
-              <option>Dark</option>
-              <option>Light</option>
-            </select>
+          <div class="chat-actions">
+            <button class="pixel-button icon" onclick="UI.startCall()" title="Voice call">📞</button>
+            <button class="pixel-button icon" onclick="UI.startVideoCall()" title="Video call">📹</button>
+            <button class="pixel-button icon" onclick="UI.showChatMenu()" title="Menu">⋮</button>
           </div>
         </div>
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Accent color</span>
-            <select style="background:#0f1020; color:white; border:1px solid #262a3f; border-radius:8px; padding:8px;">
-              <option>Blue</option>
-              <option>Purple</option>
-            </select>
+        
+        <!-- Панель закреплённых сообщений -->
+        <div id="pinned-panel" class="pinned-panel" style="display: none;"></div>
+        
+        <!-- Область сообщений -->
+        <div class="messages-area" id="messages-area"></div>
+        
+        <!-- Область ввода сообщения -->
+        <div class="message-input-area">
+          <button class="pixel-button icon emoji-btn" onclick="UI.toggleEmojiPicker()" title="Emoji">😀</button>
+          <button class="pixel-button icon attach-btn" onclick="UI.showAttachMenu()" title="Attach">📎</button>
+          <input type="text" id="message-text" class="pixel-input" placeholder="Message" 
+                 onkeypress="UI.handleKeyPress(event)" oninput="UI.handleTyping()">
+          <button class="pixel-button primary send-btn" onclick="UI.sendMessage()" title="Send">➤</button>
+        </div>
+        
+        <!-- Emoji picker (скрыт по умолчанию) -->
+        <div id="emoji-picker" class="emoji-picker" style="display: none;"></div>
+        
+        <!-- Меню прикрепления (скрыто по умолчанию) -->
+        <div id="attach-menu" class="attach-menu" style="display: none;">
+          <div onclick="UI.attachFile('image')">🖼️ Photo</div>
+          <div onclick="UI.attachFile('video')">🎥 Video</div>
+          <div onclick="UI.attachFile('audio')">🎵 Audio</div>
+          <div onclick="UI.attachFile('file')">📄 File</div>
+          <div onclick="UI.attachFile('voice')">🎤 Voice message</div>
+          <div onclick="UI.attachLocation()">📍 Location</div>
+          <div onclick="UI.attachContact()">👤 Contact</div>
+        </div>
+      </div>
+
+      <!-- Правая панель (информация о чате, медиа) -->
+      <div id="right-panel" class="right-panel" style="display: none;">
+        <div class="panel-tabs">
+          <button class="tab active" data-tab="info">Info</button>
+          <button class="tab" data-tab="media">Media</button>
+          <button class="tab" data-tab="files">Files</button>
+          <button class="tab" data-tab="links">Links</button>
+        </div>
+        <div class="panel-content" id="panel-content">
+          <div class="info-panel" id="chat-info-panel"></div>
+        </div>
+      </div>
+
+      <!-- Модальные окна (будут создаваться динамически) -->
+      <div id="modal-container"></div>
+
+      <!-- Мобильная нижняя навигация -->
+      <div class="bottom-nav">
+        <button class="nav-item" data-view="chats" onclick="UI.switchView('chats')">💬</button>
+        <button class="nav-item" data-view="contacts" onclick="UI.switchView('contacts')">👤</button>
+        <button class="nav-item" data-view="calls" onclick="UI.switchView('calls')">📞</button>
+        <button class="nav-item" data-view="channels" onclick="UI.switchView('channels')">📢</button>
+        <button class="nav-item" data-view="settings" onclick="UI.switchView('settings')">⚙</button>
+      </div>
+
+      <!-- Floating Action Button (мобильный) -->
+      <button class="fab pixel-button" onclick="UI.showCreateChatModal()" title="New chat">✚</button>
+    </div>
+
+    <!-- ==================== ЭКРАН КОНТАКТОВ ==================== -->
+    <div id="contacts-screen" class="screen" style="display: none;">
+      <div class="top-bar">
+        <button class="back-btn pixel-button icon" onclick="UI.goBack()">←</button>
+        <h1>Contacts</h1>
+        <button class="pixel-button icon" onclick="UI.showAddContact()" title="Add contact">+</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="contact-search" placeholder="Search contacts..." class="pixel-input" oninput="UI.searchContacts()">
+      </div>
+      <div class="contacts-list" id="contacts-list"></div>
+    </div>
+
+    <!-- ==================== ЭКРАН ЗВОНКОВ ==================== -->
+    <div id="calls-screen" class="screen" style="display: none;">
+      <div class="top-bar">
+        <button class="back-btn pixel-button icon" onclick="UI.goBack()">←</button>
+        <h1>Calls</h1>
+        <button class="pixel-button icon" onclick="UI.startNewCall()" title="New call">📞</button>
+      </div>
+      <div class="calls-history" id="calls-history"></div>
+    </div>
+
+    <!-- ==================== ЭКРАН КАНАЛОВ ==================== -->
+    <div id="channels-screen" class="screen" style="display: none;">
+      <div class="top-bar">
+        <button class="back-btn pixel-button icon" onclick="UI.goBack()">←</button>
+        <h1>Channels</h1>
+        <button class="pixel-button icon" onclick="UI.showCreateChannelModal()" title="Create channel">+</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="channel-search" placeholder="Search channels..." class="pixel-input" oninput="UI.searchChannels()">
+      </div>
+      <div class="channels-tabs">
+        <button class="tab active" data-tab="my">My channels</button>
+        <button class="tab" data-tab="public">Public</button>
+      </div>
+      <div class="channels-list" id="channels-list"></div>
+    </div>
+
+    <!-- ==================== ЭКРАН НАСТРОЕК ==================== -->
+    <div id="settings-screen" class="screen" style="display: none;">
+      <div class="top-bar">
+        <button class="back-btn pixel-button icon" onclick="UI.goBack()">←</button>
+        <h1>Settings</h1>
+      </div>
+      <div class="settings-list">
+        <div class="settings-item" onclick="UI.openProfile()">
+          <span class="icon">👤</span>
+          <span>Profile</span>
+        </div>
+        <div class="settings-item" onclick="UI.openAppearance()">
+          <span class="icon">🎨</span>
+          <span>Appearance</span>
+        </div>
+        <div class="settings-item" onclick="UI.openNotifications()">
+          <span class="icon">🔔</span>
+          <span>Notifications</span>
+        </div>
+        <div class="settings-item" onclick="UI.openPrivacy()">
+          <span class="icon">🔒</span>
+          <span>Privacy & Security</span>
+        </div>
+        <div class="settings-item" onclick="UI.openLanguage()">
+          <span class="icon">🌐</span>
+          <span>Language</span>
+        </div>
+        <div class="settings-item" onclick="UI.openDevices()">
+          <span class="icon">📱</span>
+          <span>Devices</span>
+        </div>
+        <div class="settings-item" onclick="UI.openStorage()">
+          <span class="icon">💾</span>
+          <span>Storage</span>
+        </div>
+        <div class="settings-item" onclick="UI.openHelp()">
+          <span class="icon">❓</span>
+          <span>Help</span>
+        </div>
+        <div class="settings-item" onclick="UI.logout()">
+          <span class="icon">🚪</span>
+          <span>Log out</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== ЭКРАН ПОИСКА ==================== -->
+    <div id="search-screen" class="screen" style="display: none;">
+      <div class="top-bar">
+        <button class="back-btn pixel-button icon" onclick="UI.goBack()">←</button>
+        <h1>Search</h1>
+      </div>
+      <div class="search-box">
+        <input type="text" id="global-search" placeholder="Search messages, users, channels..." class="pixel-input" oninput="UI.globalSearch()">
+      </div>
+      <div class="search-tabs">
+        <button class="tab active" data-tab="all">All</button>
+        <button class="tab" data-tab="messages">Messages</button>
+        <button class="tab" data-tab="users">Users</button>
+        <button class="tab" data-tab="channels">Channels</button>
+      </div>
+      <div class="search-results" id="search-results"></div>
+    </div>
+
+    <!-- ==================== ЭКРАН ПРОФИЛЯ ==================== -->
+    <div id="profile-screen" class="screen" style="display: none;">
+      <div class="top-bar">
+        <button class="back-btn pixel-button icon" onclick="UI.goBack()">←</button>
+        <h1>Profile</h1>
+        <button class="pixel-button icon" onclick="UI.editProfile()" title="Edit profile">✏️</button>
+      </div>
+      <div class="profile-header">
+        <div class="profile-avatar-container" onclick="UI.changeAvatar()">
+          <img id="profile-avatar" src="https://i.ibb.co/QjTkyWfG/85-20260306202001.png" alt="Avatar">
+          <div class="avatar-overlay">Change</div>
+        </div>
+        <h2 id="profile-username"></h2>
+        <p id="profile-bio"></p>
+        <div class="profile-stats">
+          <div class="stat">
+            <span class="stat-value" id="profile-messages">0</span>
+            <span class="stat-label">Messages</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="profile-chats">0</span>
+            <span class="stat-label">Chats</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="profile-contacts">0</span>
+            <span class="stat-label">Contacts</span>
           </div>
         </div>
-      `;
-    }
+      </div>
+      <div class="profile-actions">
+        <button class="pixel-button" onclick="UI.shareProfile()">Share profile</button>
+        <button class="pixel-button" onclick="UI.blockUser()">Block user</button>
+      </div>
+    </div>
+  </div>
 
-    function renderChatSettings(container) {
-      container.innerHTML = `
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Send by Enter</span><div class="switch active" id="switchEnter"></div></div>
-        </div>
-      `;
-      document.getElementById('switchEnter').addEventListener('click', (e) => e.target.classList.toggle('active'));
-    }
-
-    function renderDataStorageSettings(container) {
-      container.innerHTML = `
-        <p style="color:white;">Cache size: 24 MB</p>
-        <button class="edit-profile-btn" id="clearCache">Clear Cache</button>
-      `;
-      document.getElementById('clearCache').addEventListener('click', () => showToast('Cache cleared'));
-    }
-
-    function renderAdvancedSettings(container) {
-      container.innerHTML = `
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Developer mode</span><div class="switch" id="switchDev"></div></div>
-        </div>
-        <p style="color:#a7a9c6;">Version: 1.0.0</p>
-        <p style="color:#a7a9c6;">User ID: ${currentUser.id}</p>
-      `;
-      document.getElementById('switchDev').addEventListener('click', (e) => e.target.classList.toggle('active'));
-    }
-
-    function renderEditProfile(container) {
-      container.innerHTML = `
-        <h3 style="margin-bottom:10px;">Edit Profile</h3>
-        <input class="input-field" id="editName" value="${currentUser.displayName}">
-        <textarea class="input-field" id="editBio" rows="3">${currentUser.bio || ''}</textarea>
-        <button class="edit-profile-btn" id="saveEdit">Save</button>
-      `;
-      document.getElementById('saveEdit').addEventListener('click', () => {
-        currentUser.displayName = document.getElementById('editName').value;
-        currentUser.bio = document.getElementById('editBio').value;
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        showToast('Profile updated');
-        rightPanelGoBack();
-      });
-    }
-
-    function renderTwoFA(container) {
-      container.innerHTML = `
-        <div style="margin-bottom:16px;">
-          <div style="display:flex; justify-content:space-between;"><span>Enable 2FA</span><div class="switch" id="switch2fa"></div></div>
-        </div>
-      `;
-      document.getElementById('switch2fa').addEventListener('click', (e) => e.target.classList.toggle('active'));
-    }
-
-    function renderGroupInfo(container) {
-      if (!currentChat) return;
-      container.innerHTML = `
-        <div style="text-align:center;">
-          <div class="profile-avatar" style="margin:0 auto;"><img src="${currentChat.avatar}"></div>
-          <h3>${currentChat.name}</h3>
-          <p style="color:#a7a9c6;">${currentChat.description || 'Group'}</p>
-        </div>
-        <div class="settings-row"><i class="fas fa-users"></i><span class="label">Members</span><span class="value">${currentChat.participants.length}</span></div>
-      `;
-    }
-
-    function renderChannelInfo(container) {
-      if (!currentChat) return;
-      container.innerHTML = `
-        <div style="text-align:center;">
-          <div class="profile-avatar" style="margin:0 auto;"><img src="${currentChat.avatar}"></div>
-          <h3>${currentChat.name}</h3>
-          <p style="color:#a7a9c6;">${currentChat.description || 'Channel'}</p>
-        </div>
-      `;
-    }
-
-    function showChatMenu() {
-      if (!currentChat) return;
-      if (currentChat.type === 'group') {
-        rightPanelHistory.push('groupInfo');
-        renderRightPanel('groupInfo');
-        document.getElementById('rightPanel').classList.add('open');
-      } else if (currentChat.type === 'channel') {
-        rightPanelHistory.push('channelInfo');
-        renderRightPanel('channelInfo');
-        document.getElementById('rightPanel').classList.add('open');
-      } else {
-        showToast('Chat info');
-      }
-    }
-
-    // Start the app
-    renderApp();
-  </script>
+  <!-- Подключение Socket.IO и клиентского JS -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/public/app.js"></script>
 </body>
 </html>
