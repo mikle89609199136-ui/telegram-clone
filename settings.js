@@ -20,13 +20,21 @@ const DEFAULT_SETTINGS = {
   privacy: {
     lastSeen: 'everyone',      // 'everyone', 'contacts', 'nobody'
     profilePhoto: 'everyone',
+    bio: 'everyone',
     calls: 'contacts',
-    forwardedMessages: 'contacts'
+    forwardedMessages: 'contacts',
+    groupsInvites: 'everyone'   // 'everyone', 'contacts'
   },
   chat: {
     fontSize: 16,
     enterToSend: true,
-    archiveOnMute: false
+    archiveOnMute: false,
+    showStickers: true,
+    showEmoji: true
+  },
+  security: {
+    twoFactorAuth: false,
+    activeSessions: []
   }
 };
 
@@ -52,8 +60,14 @@ router.put('/', async (req, res) => {
       return res.status(400).json({ error: 'Invalid settings format' });
     }
 
-    await redis.set(getSettingsKey(req.user.id), JSON.stringify(newSettings));
-    res.json({ success: true });
+    // Сохраняем только разрешённые поля, объединяя с текущими
+    const currentJson = await redis.get(getSettingsKey(req.user.id));
+    const current = currentJson ? JSON.parse(currentJson) : DEFAULT_SETTINGS;
+    
+    const updated = { ...current, ...newSettings };
+    
+    await redis.set(getSettingsKey(req.user.id), JSON.stringify(updated));
+    res.json({ success: true, settings: updated });
   } catch (err) {
     logger.error('Error saving settings:', err);
     res.status(500).json({ error: 'Failed to save settings' });
@@ -73,25 +87,92 @@ router.post('/reset', async (req, res) => {
 
 // ==================== ОБНОВЛЕНИЕ КОНКРЕТНОГО РАЗДЕЛА ====================
 router.patch('/:section', async (req, res) => {
-  const { section } = req.params; // 'theme', 'notifications', 'privacy', 'chat'
+  const { section } = req.params; // 'theme', 'notifications', 'privacy', 'chat', 'security'
   const updates = req.body;
+
+  const allowedSections = ['theme', 'language', 'notifications', 'privacy', 'chat', 'security'];
+  if (!allowedSections.includes(section)) {
+    return res.status(400).json({ error: 'Invalid section' });
+  }
 
   try {
     const settingsJson = await redis.get(getSettingsKey(req.user.id));
     const settings = settingsJson ? JSON.parse(settingsJson) : DEFAULT_SETTINGS;
 
-    if (!settings[section]) {
-      return res.status(400).json({ error: 'Invalid section' });
+    if (!settings[section] && typeof settings[section] !== 'object') {
+      settings[section] = {};
     }
 
-    // Простое объединение объектов
-    settings[section] = { ...settings[section], ...updates };
+    // Глубокое слияние для объекта
+    if (typeof updates === 'object' && !Array.isArray(updates)) {
+      settings[section] = { ...settings[section], ...updates };
+    } else {
+      settings[section] = updates;
+    }
 
     await redis.set(getSettingsKey(req.user.id), JSON.stringify(settings));
     res.json({ success: true, section: settings[section] });
   } catch (err) {
     logger.error('Error updating settings section:', err);
     res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// ==================== ПОЛУЧИТЬ КОНКРЕТНЫЙ РАЗДЕЛ ====================
+router.get('/:section', async (req, res) => {
+  const { section } = req.params;
+
+  const allowedSections = ['theme', 'language', 'notifications', 'privacy', 'chat', 'security'];
+  if (!allowedSections.includes(section)) {
+    return res.status(400).json({ error: 'Invalid section' });
+  }
+
+  try {
+    const settingsJson = await redis.get(getSettingsKey(req.user.id));
+    const settings = settingsJson ? JSON.parse(settingsJson) : DEFAULT_SETTINGS;
+    
+    res.json({ [section]: settings[section] || null });
+  } catch (err) {
+    logger.error('Error fetching settings section:', err);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
+// ==================== ДОБАВИТЬ ЧАТ В ИГНОРИРУЕМЫЕ (MUTE) ====================
+router.post('/mute/:chatId', async (req, res) => {
+  const { chatId } = req.params;
+
+  try {
+    const settingsJson = await redis.get(getSettingsKey(req.user.id));
+    const settings = settingsJson ? JSON.parse(settingsJson) : DEFAULT_SETTINGS;
+
+    if (!settings.notifications.mutedChats.includes(chatId)) {
+      settings.notifications.mutedChats.push(chatId);
+      await redis.set(getSettingsKey(req.user.id), JSON.stringify(settings));
+    }
+
+    res.json({ success: true, mutedChats: settings.notifications.mutedChats });
+  } catch (err) {
+    logger.error('Error muting chat:', err);
+    res.status(500).json({ error: 'Failed to mute chat' });
+  }
+});
+
+// ==================== УБРАТЬ ЧАТ ИЗ ИГНОРИРУЕМЫХ (UNMUTE) ====================
+router.delete('/mute/:chatId', async (req, res) => {
+  const { chatId } = req.params;
+
+  try {
+    const settingsJson = await redis.get(getSettingsKey(req.user.id));
+    const settings = settingsJson ? JSON.parse(settingsJson) : DEFAULT_SETTINGS;
+
+    settings.notifications.mutedChats = settings.notifications.mutedChats.filter(id => id !== chatId);
+    await redis.set(getSettingsKey(req.user.id), JSON.stringify(settings));
+
+    res.json({ success: true, mutedChats: settings.notifications.mutedChats });
+  } catch (err) {
+    logger.error('Error unmuting chat:', err);
+    res.status(500).json({ error: 'Failed to unmute chat' });
   }
 });
 
