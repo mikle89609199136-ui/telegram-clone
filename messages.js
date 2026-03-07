@@ -1,433 +1,144 @@
-const express = require('express');
-const router = express.Router();
-const { query } = require('./data');
-const { generateId, sanitize, formatRelativeTime } = require('./utils');
+const { query, transaction } = require('./database');
+const { addToQueue, generateId } = require('./utils');
 const logger = require('./logger');
-const { checkPermission, PERMISSIONS } = require('./security');
 
-// ==================== ПОЛУЧЕНИЕ СООБЩЕНИЙ ЧАТА (с пагинацией) ====================
-router.get('/:chatId', async (req, res) => {
-  const { chatId } = req.params;
-  const { limit = 50, before, after } = req.query;
+async function saveMessage(chatId, senderId, data) {
+  const { text, type = 'text', media, replyTo, forwardedFrom } = data;
+  if (!text && !media) throw new Error('Message content required');
 
-  try {
-    // Проверка доступа к чату
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
+  const messageUid = generateId();
+  const result = await query(
+    `INSERT INTO messages (uid, chat_id, sender_id, type, content, media, reply_to, forwarded_from)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [messageUid, chatId, senderId, type, text || null, media ? JSON.stringify(media) : null, replyTo || null, forwardedFrom || null]
+  );
+  const message = result.rows[0];
+
+  // Update chat last message
+  await query('UPDATE chats SET last_message_id = $1 WHERE id = $2', [message.id, chatId]);
+
+  // Queue notifications
+  await addToQueue('notifications', { type: 'new_message', message });
+
+  // Get sender info
+  const sender = await query('SELECT id, username, avatar FROM users WHERE id = $1', [senderId]);
+  message.sender = sender.rows[0] || null;
+
+  return message;
+}
+
+async function getMessages(chatId, limit = 50, before = null) {
+  let sql = `
+    SELECT m.*,
+           u.id as sender_id, u.username as sender_username, u.avatar as sender_avatar,
+           r.id as reply_id, r.content as reply_content, r.type as reply_type
+    FROM messages m
+    LEFT JOIN users u ON m.sender_id = u.id
+    LEFT JOIN messages r ON m.reply_to = r.id
+    WHERE m.chat_id = $1 AND m.deleted = false
+  `;
+  const params = [chatId];
+  if (before) {
+    sql += ' AND m.id < $2';
+    params.push(before);
+  }
+  sql += ' ORDER BY m.created_at DESC LIMIT $' + (params.length + 1);
+  params.push(limit);
+
+  const result = await query(sql, params);
+  const messages = result.rows.map(row => ({
+    id: row.id,
+    uid: row.uid,
+    chat_id: row.chat_id,
+    type: row.type,
+    text: row.content,
+    media: row.media,
+    reply_to: row.reply_id ? {
+      id: row.reply_id,
+      content: row.reply_content,
+      type: row.reply_type
+    } : null,
+    forwarded_from: row.forwarded_from,
+    views: row.views,
+    edited: row.edited,
+    created_at: row.created_at,
+    sender: row.sender_id ? {
+      id: row.sender_id,
+      username: row.sender_username,
+      avatar: row.sender_avatar
+    } : null
+  }));
+  return messages;
+}
+
+async function editMessage(messageId, userId, newText) {
+  return transaction(async (client) => {
+    const msg = await client.query('SELECT sender_id FROM messages WHERE id = $1 AND deleted = false', [messageId]);
+    if (!msg.rows.length || msg.rows[0].sender_id !== userId) {
+      throw new Error('Not allowed');
+    }
+    const result = await client.query(
+      'UPDATE messages SET content = $1, edited = true, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [newText, messageId]
     );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    return result.rows[0];
+  });
+}
 
-    // Проверка права на просмотр истории
-    const canViewHistory = await checkPermission(req.user.id, chatId, PERMISSIONS.VIEW_HISTORY);
-    if (!canViewHistory) {
-      return res.status(403).json({ error: 'No permission to view chat history' });
-    }
-
-    let sql = `
-      SELECT m.*, u.username, u.avatar
-      FROM messages m
-      JOIN users u ON u.id = m.sender_id
-      WHERE m.chat_id = $1
-    `;
-    const params = [chatId];
-    let paramIndex = 2;
-
-    if (before) {
-      params.push(before);
-      sql += ` AND m.created_at < $${paramIndex++}`;
-    }
-    if (after) {
-      params.push(after);
-      sql += ` AND m.created_at > $${paramIndex++}`;
-    }
-    
-    sql += ` ORDER BY m.created_at DESC LIMIT $${paramIndex}`;
-    params.push(parseInt(limit));
-
-    const result = await query(sql, params);
-    
-    // Получаем реакции для каждого сообщения
-    const messagesWithReactions = await Promise.all(result.rows.map(async (msg) => {
-      const reactionsRes = await query(`
-        SELECT json_agg(json_build_object(
-          'emoji', emoji, 
-          'count', count,
-          'userReacted', (SELECT COUNT(*) > 0 FROM reactions r2 WHERE r2.message_id = $1 AND r2.user_id = $2 AND r2.emoji = reactions.emoji)
-        )) as reactions
-        FROM (
-          SELECT emoji, COUNT(*) as count
-          FROM reactions
-          WHERE message_id = $1
-          GROUP BY emoji
-        ) reactions
-      `, [msg.id, req.user.id]);
-      
-      return {
-        ...msg,
-        reactions: reactionsRes.rows[0]?.reactions || [],
-        formattedTime: formatRelativeTime(msg.created_at)
-      };
-    }));
-
-    // Возвращаем в хронологическом порядке (от старых к новым)
-    res.json(messagesWithReactions.reverse());
-  } catch (err) {
-    logger.error('Error fetching messages:', err);
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
-});
-
-// ==================== ПОЛУЧЕНИЕ ОДНОГО СООБЩЕНИЯ ====================
-router.get('/single/:messageId', async (req, res) => {
-  const { messageId } = req.params;
-
-  try {
-    const message = await query(`
-      SELECT m.*, u.username, u.avatar
-      FROM messages m
-      JOIN users u ON u.id = m.sender_id
-      WHERE m.id = $1
-    `, [messageId]);
-
-    if (message.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-
-    const msg = message.rows[0];
-    
-    // Проверка доступа к чату
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [msg.chat_id, req.user.id]
-    );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    // Получаем реакции
-    const reactionsRes = await query(`
-      SELECT json_agg(json_build_object(
-        'emoji', emoji, 
-        'count', count,
-        'userReacted', (SELECT COUNT(*) > 0 FROM reactions r2 WHERE r2.message_id = $1 AND r2.user_id = $2 AND r2.emoji = reactions.emoji)
-      )) as reactions
-      FROM (
-        SELECT emoji, COUNT(*) as count
-        FROM reactions
-        WHERE message_id = $1
-        GROUP BY emoji
-      ) reactions
-    `, [msg.id, req.user.id]);
-
-    res.json({
-      ...msg,
-      reactions: reactionsRes.rows[0]?.reactions || [],
-      formattedTime: formatRelativeTime(msg.created_at)
-    });
-  } catch (err) {
-    logger.error('Error fetching single message:', err);
-    res.status(500).json({ error: 'Failed to fetch message' });
-  }
-});
-
-// ==================== ОТПРАВКА СООБЩЕНИЯ (REST, дублёр WebSocket) ====================
-router.post('/:chatId', async (req, res) => {
-  const { chatId } = req.params;
-  const { content, type = 'text', replyTo } = req.body;
-  
-  if (!content) {
-    return res.status(400).json({ error: 'Content required' });
-  }
-
-  try {
-    // Проверка членства в чате
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
-    );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Not a member' });
-    }
-
-    // Проверка прав на отправку
-    const hasSendPermission = await checkPermission(req.user.id, chatId, PERMISSIONS.SEND_MESSAGE);
-    if (!hasSendPermission) {
-      return res.status(403).json({ error: 'No permission to send messages' });
-    }
-
-    const messageId = generateId();
-    const safeContent = sanitize(content);
-
-    await query(`
-      INSERT INTO messages (id, chat_id, sender_id, content, type, reply_to, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
-    `, [messageId, chatId, req.user.id, safeContent, type, replyTo]);
-
-    // Получаем информацию об отправителе
-    const senderRes = await query('SELECT username, avatar FROM users WHERE id = $1', [req.user.id]);
-    const sender = senderRes.rows[0];
-
-    const message = {
-      id: messageId,
-      chatId,
-      senderId: req.user.id,
-      sender: { 
-        id: req.user.id, 
-        username: sender.username,
-        avatar: sender.avatar
-      },
-      content: safeContent,
-      type,
-      replyTo,
-      created_at: new Date().toISOString(),
-      formattedTime: formatRelativeTime(new Date()),
-      reactions: []
-    };
-
-    res.status(201).json(message);
-  } catch (err) {
-    logger.error('Error sending message via REST:', err);
-    res.status(500).json({ error: 'Failed to send message' });
-  }
-});
-
-// ==================== РЕДАКТИРОВАНИЕ СООБЩЕНИЯ ====================
-router.put('/:messageId', async (req, res) => {
-  const { messageId } = req.params;
-  const { content } = req.body;
-  
-  if (!content) {
-    return res.status(400).json({ error: 'Content required' });
-  }
-
-  try {
-    // Проверяем, что сообщение принадлежит пользователю
-    const msgRes = await query(
-      'SELECT chat_id, sender_id FROM messages WHERE id = $1',
-      [messageId]
-    );
-    if (msgRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-    
-    const { chat_id: chatId, sender_id: senderId } = msgRes.rows[0];
-    
-    // Проверка прав
-    let canEdit = false;
-    if (senderId === req.user.id) {
-      canEdit = true;
+async function deleteMessage(messageId, userId, deleteForAll = false) {
+  return transaction(async (client) => {
+    if (deleteForAll) {
+      const msg = await client.query('SELECT sender_id FROM messages WHERE id = $1', [messageId]);
+      if (!msg.rows.length || msg.rows[0].sender_id !== userId) {
+        throw new Error('Not allowed');
+      }
+      await client.query('UPDATE messages SET deleted = true WHERE id = $1', [messageId]);
     } else {
-      canEdit = await checkPermission(req.user.id, chatId, PERMISSIONS.EDIT_MESSAGE);
+      await client.query('UPDATE messages SET deleted = true WHERE id = $1 AND sender_id = $2', [messageId, userId]);
     }
-    
-    if (!canEdit) {
-      return res.status(403).json({ error: 'No permission to edit this message' });
-    }
+  });
+}
 
-    const result = await query(
-      'UPDATE messages SET content = $1, edited = TRUE WHERE id = $2 RETURNING *',
-      [sanitize(content), messageId]
+async function reactToMessage(messageId, userId, reaction) {
+  return transaction(async (client) => {
+    await client.query(
+      `INSERT INTO message_reactions (message_id, user_id, reaction)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (message_id, user_id, reaction) DO NOTHING`,
+      [messageId, userId, reaction]
     );
-    
-    res.json(result.rows[0]);
-  } catch (err) {
-    logger.error('Error editing message:', err);
-    res.status(500).json({ error: 'Failed to edit message' });
-  }
-});
-
-// ==================== УДАЛЕНИЕ СООБЩЕНИЯ ====================
-router.delete('/:messageId', async (req, res) => {
-  const { messageId } = req.params;
-
-  try {
-    // Получаем информацию о сообщении
-    const msgRes = await query(
-      'SELECT chat_id, sender_id FROM messages WHERE id = $1',
+    const reactions = await client.query(
+      'SELECT reaction, COUNT(*) FROM message_reactions WHERE message_id = $1 GROUP BY reaction',
       [messageId]
     );
-    if (msgRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-    
-    const { chat_id: chatId, sender_id: senderId } = msgRes.rows[0];
-    
-    // Проверка прав
-    let canDelete = false;
-    if (senderId === req.user.id) {
-      canDelete = true;
-    } else {
-      canDelete = await checkPermission(req.user.id, chatId, PERMISSIONS.DELETE_MESSAGE);
-    }
-    
-    if (!canDelete) {
-      return res.status(403).json({ error: 'No permission to delete this message' });
-    }
+    return reactions.rows;
+  });
+}
 
-    const result = await query(
-      'DELETE FROM messages WHERE id = $1 RETURNING id',
-      [messageId]
-    );
-    
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Error deleting message:', err);
-    res.status(500).json({ error: 'Failed to delete message' });
-  }
-});
+async function markAsRead(chatId, userId, messageIds) {
+  if (!messageIds || !messageIds.length) return;
+  const values = messageIds.map(id => `(${id}, ${userId})`).join(',');
+  await query(
+    `INSERT INTO message_reads (message_id, user_id) VALUES ${values} ON CONFLICT DO NOTHING`
+  );
+}
 
-// ==================== ПОЛУЧЕНИЕ РЕАКЦИЙ НА СООБЩЕНИЕ ====================
-router.get('/:messageId/reactions', async (req, res) => {
-  const { messageId } = req.params;
+async function getUnreadCount(userId, chatId) {
+  const result = await query(
+    `SELECT COUNT(*) FROM messages m
+     WHERE m.chat_id = $1 AND m.deleted = false
+       AND NOT EXISTS (SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.user_id = $2)`,
+    [chatId, userId]
+  );
+  return parseInt(result.rows[0].count);
+}
 
-  try {
-    const result = await query(`
-      SELECT emoji, COUNT(*) as count,
-        (SELECT COUNT(*) > 0 FROM reactions r2 WHERE r2.message_id = $1 AND r2.user_id = $2 AND r2.emoji = reactions.emoji) as userReacted
-      FROM reactions
-      WHERE message_id = $1
-      GROUP BY emoji
-    `, [messageId, req.user.id]);
-    
-    res.json(result.rows);
-  } catch (err) {
-    logger.error('Error fetching reactions:', err);
-    res.status(500).json({ error: 'Failed to fetch reactions' });
-  }
-});
-
-// ==================== ДОБАВЛЕНИЕ РЕАКЦИИ (REST) ====================
-router.post('/:messageId/reactions', async (req, res) => {
-  const { messageId } = req.params;
-  const { emoji } = req.body;
-
-  if (!emoji) {
-    return res.status(400).json({ error: 'Emoji required' });
-  }
-
-  try {
-    // Проверяем существование сообщения
-    const msgRes = await query('SELECT chat_id FROM messages WHERE id = $1', [messageId]);
-    if (msgRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-    
-    const chatId = msgRes.rows[0].chat_id;
-    
-    // Проверка права на реакции
-    const hasReactPermission = await checkPermission(req.user.id, chatId, PERMISSIONS.REACT);
-    if (!hasReactPermission) {
-      return res.status(403).json({ error: 'No permission to react' });
-    }
-
-    await query(`
-      INSERT INTO reactions (message_id, user_id, emoji, created_at)
-      VALUES ($1, $2, $3, NOW())
-      ON CONFLICT (message_id, user_id, emoji) DO NOTHING
-    `, [messageId, req.user.id, emoji]);
-
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Error adding reaction:', err);
-    res.status(500).json({ error: 'Failed to add reaction' });
-  }
-});
-
-// ==================== УДАЛЕНИЕ РЕАКЦИИ (REST) ====================
-router.delete('/:messageId/reactions', async (req, res) => {
-  const { messageId } = req.params;
-  const { emoji } = req.body;
-
-  try {
-    await query(
-      'DELETE FROM reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3',
-      [messageId, req.user.id, emoji]
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Error removing reaction:', err);
-    res.status(500).json({ error: 'Failed to remove reaction' });
-  }
-});
-
-// ==================== ПЕРЕСЫЛКА СООБЩЕНИЯ (REST) ====================
-router.post('/:messageId/forward', async (req, res) => {
-  const { messageId } = req.params;
-  const { toChatId } = req.body;
-
-  try {
-    // Получаем исходное сообщение
-    const msgRes = await query('SELECT content, type FROM messages WHERE id = $1', [messageId]);
-    if (msgRes.rows.length === 0) {
-      return res.status(404).json({ error: 'Original message not found' });
-    }
-    const { content, type } = msgRes.rows[0];
-
-    // Проверяем членство в целевом чате
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [toChatId, req.user.id]
-    );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Not a member of target chat' });
-    }
-
-    // Проверка прав на отправку в целевом чате
-    const hasSendPermission = await checkPermission(req.user.id, toChatId, PERMISSIONS.SEND_MESSAGE);
-    if (!hasSendPermission) {
-      return res.status(403).json({ error: 'No permission to send messages to target chat' });
-    }
-
-    const newMessageId = generateId();
-    await query(`
-      INSERT INTO messages (id, chat_id, sender_id, content, type, forwarded, created_at)
-      VALUES ($1, $2, $3, $4, $5, true, NOW())
-    `, [newMessageId, toChatId, req.user.id, content, type]);
-
-    res.json({ success: true, messageId: newMessageId });
-  } catch (err) {
-    logger.error('Error forwarding message:', err);
-    res.status(500).json({ error: 'Failed to forward message' });
-  }
-});
-
-// ==================== ПОИСК СООБЩЕНИЙ В ЧАТЕ ====================
-router.get('/search/:chatId', async (req, res) => {
-  const { chatId } = req.params;
-  const { q, limit = 50 } = req.query;
-
-  if (!q || q.length < 2) {
-    return res.json([]);
-  }
-
-  try {
-    // Проверка доступа
-    const member = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
-    );
-    if (member.rows.length === 0) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const messages = await query(`
-      SELECT m.id, m.content, m.created_at, m.type, u.username, u.avatar
-      FROM messages m
-      JOIN users u ON u.id = m.sender_id
-      WHERE m.chat_id = $1 AND m.content ILIKE $2
-      ORDER BY m.created_at DESC
-      LIMIT $3
-    `, [chatId, `%${q}%`, parseInt(limit)]);
-
-    res.json(messages.rows);
-  } catch (err) {
-    logger.error('Error searching messages:', err);
-    res.status(500).json({ error: 'Search failed' });
-  }
-});
-
-module.exports = router;
+module.exports = {
+  saveMessage,
+  getMessages,
+  editMessage,
+  deleteMessage,
+  reactToMessage,
+  markAsRead,
+  getUnreadCount,
+};
