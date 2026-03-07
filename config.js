@@ -1,40 +1,38 @@
-require('dotenv').config();
+const dotenv = require('dotenv');
+dotenv.config();
 
 module.exports = {
-  port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
-
-  jwt: {
-    secret: process.env.JWT_SECRET,
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+  port: process.env.PORT || 3000,
+  service: process.env.SERVICE || 'api',
+  databaseUrl: process.env.DATABASE_URL,
+  databaseReplicaUrl: process.env.DATABASE_REPLICA_URL,
+  redisUrl: process.env.REDIS_URL,
+  redisTls: process.env.REDIS_TLS === 'true',
+  jwtSecret: process.env.JWT_SECRET,
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+  jwtAccessExpiry: process.env.JWT_ACCESS_EXPIRY || '15m',
+  jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
+  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS) || 12,
+  s3: {
+    endpoint: process.env.S3_ENDPOINT,
+    accessKey: process.env.S3_ACCESS_KEY,
+    secretKey: process.env.S3_SECRET_KEY,
+    bucket: process.env.S3_BUCKET,
+    useSSL: process.env.S3_USE_SSL === 'true',
   },
-
-  pg: {
-    host: process.env.PG_HOST || 'localhost',
-    port: process.env.PG_PORT || 5432,
-    user: process.env.PG_USER || 'postgres',
-    password: process.env.PG_PASSWORD || 'postgres',
-    database: process.env.PG_DATABASE || 'craneapp'
-  },
-
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
-
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY,
-    model: process.env.OPENAI_MODEL || 'gpt-4o'
-  },
-
-  upload: {
-    dir: process.env.UPLOAD_DIR || 'uploads',
-    maxSize: parseInt(process.env.MAX_FILE_SIZE) || 10485760
-  },
-
-  vapid: {
-    publicKey: process.env.VAPID_PUBLIC_KEY,
-    privateKey: process.env.VAPID_PRIVATE_KEY,
-    subject: process.env.VAPID_SUBJECT || 'mailto:admin@craneapp.com'
-  },
-
-  appName: process.env.APP_NAME || 'CraneApp'
+  cdnUrl: process.env.CDN_URL,
+  queueUrl: process.env.QUEUE_URL,
+  openaiApiKey: process.env.OPENAI_API_KEY,
+  aiModel: process.env.AI_MODEL || 'gpt-3.5-turbo',
+  aiRateLimit: parseInt(process.env.AI_RATE_LIMIT) || 10,
+  aiMaxTokens: parseInt(process.env.AI_MAX_TOKENS) || 1000,
+  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
+  socketRateLimit: parseInt(process.env.SOCKET_RATE_LIMIT) || 10,
+  uploadLimit: parseInt(process.env.UPLOAD_LIMIT) || 104857600,
+  maxMessageSize: parseInt(process.env.MAX_MESSAGE_SIZE) || 10485760,
+  sessionSecret: process.env.SESSION_SECRET,
+  corsOrigin: process.env.CORS_ORIGIN || '*',
+  logLevel: process.env.LOG_LEVEL || 'info',
 };
