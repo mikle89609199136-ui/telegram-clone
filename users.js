@@ -1,155 +1,102 @@
 const express = require('express');
-const router = express.Router();
-const { query } = require('./data');
-const { redis } = require('./database');
+const { query } = require('./database');
 const logger = require('./logger');
+const router = express.Router();
 
-// ==================== ПОЛУЧЕНИЕ ИНФОРМАЦИИ О ПОЛЬЗОВАТЕЛЕ ПО ID ====================
-router.get('/:userId', async (req, res) => {
-  const { userId } = req.params;
-
+router.get('/me', async (req, res) => {
   try {
-    const user = await query(`
-      SELECT id, username, avatar, bio, status, last_seen, created_at
-      FROM users
-      WHERE id = $1
-    `, [userId]);
-
-    if (user.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const devices = await redis.sMembers(`user:${userId}:devices`);
-    let online = false;
-    for (const dev of devices) {
-      if (await redis.exists(`online:${userId}:${dev}`)) {
-        online = true;
-        break;
-      }
-    }
-
-    const userData = user.rows[0];
-    userData.online = online;
-    
-    if (online) {
-      delete userData.last_seen;
-    }
-
-    res.json(userData);
-  } catch (err) {
-    logger.error('Error fetching user:', err);
-    res.status(500).json({ error: 'Failed to fetch user' });
-  }
-});
-
-// ==================== ПОИСК ПОЛЬЗОВАТЕЛЕЙ ПО ИМЕНИ ====================
-router.get('/search/:query', async (req, res) => {
-  const { query: searchQuery } = req.params;
-  if (searchQuery.length < 2) {
-    return res.json([]);
-  }
-
-  try {
-    const users = await query(`
-      SELECT id, username, avatar, status
-      FROM users
-      WHERE username ILIKE $1
-      LIMIT 20
-    `, [`%${searchQuery}%`]);
-
-    const usersWithStatus = await Promise.all(users.rows.map(async (user) => {
-      const devices = await redis.sMembers(`user:${user.id}:devices`);
-      let online = false;
-      for (const dev of devices) {
-        if (await redis.exists(`online:${user.id}:${dev}`)) {
-          online = true;
-          break;
-        }
-      }
-      return { ...user, online };
-    }));
-
-    res.json(usersWithStatus);
-  } catch (err) {
-    logger.error('Error searching users:', err);
-    res.status(500).json({ error: 'Search failed' });
-  }
-});
-
-// ==================== ПОЛУЧЕНИЕ СПИСКА УЧАСТНИКОВ ЧАТА ====================
-router.get('/chat/:chatId', async (req, res) => {
-  const { chatId } = req.params;
-
-  try {
-    const memberCheck = await query(
-      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2',
-      [chatId, req.user.id]
+    const result = await query(
+      'SELECT id, uid, username, email, avatar, bio, verified, online, last_seen, created_at FROM users WHERE id = $1',
+      [req.userId]
     );
-    if (memberCheck.rows.length === 0) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const members = await query(`
-      SELECT u.id, u.username, u.avatar, u.status, cm.role, cm.joined_at
-      FROM chat_members cm
-      JOIN users u ON u.id = cm.user_id
-      WHERE cm.chat_id = $1
-      ORDER BY 
-        CASE 
-          WHEN cm.role = 'owner' THEN 1
-          WHEN cm.role = 'admin' THEN 2
-          WHEN cm.role = 'moderator' THEN 3
-          ELSE 4
-        END,
-        cm.joined_at ASC
-    `, [chatId]);
-
-    const membersWithStatus = await Promise.all(members.rows.map(async (member) => {
-      const devices = await redis.sMembers(`user:${member.id}:devices`);
-      let online = false;
-      for (const dev of devices) {
-        if (await redis.exists(`online:${member.id}:${dev}`)) {
-          online = true;
-          break;
-        }
-      }
-      return { ...member, online };
-    }));
-
-    res.json(membersWithStatus);
+    res.json(result.rows[0]);
   } catch (err) {
-    logger.error('Error fetching chat members:', err);
-    res.status(500).json({ error: 'Failed to fetch members' });
+    logger.error('Get me error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
 
-// ==================== ПОЛУЧЕНИЕ СТАТУСА ПОЛЬЗОВАТЕЛЯ (ОНЛАЙН) ====================
-router.get('/:userId/status', async (req, res) => {
-  const { userId } = req.params;
+router.get('/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user ID' });
 
   try {
-    const devices = await redis.sMembers(`user:${userId}:devices`);
-    let online = false;
-    for (const dev of devices) {
-      if (await redis.exists(`online:${userId}:${dev}`)) {
-        online = true;
-        break;
+    const result = await query(
+      `SELECT u.id, u.uid, u.username, u.avatar, u.bio, u.verified, u.online, u.last_seen,
+        (SELECT privacy_last_seen FROM user_settings WHERE user_id = u.id) as privacy_last_seen
+       FROM users u WHERE u.id = $1`,
+      [id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' });
+
+    const user = result.rows[0];
+    if (user.privacy_last_seen === 'nobody') {
+      user.last_seen = null;
+    } else if (user.privacy_last_seen === 'contacts') {
+      const contactCheck = await query(
+        'SELECT 1 FROM contacts WHERE user_id = $1 AND contact_id = $2',
+        [req.userId, id]
+      );
+      if (!contactCheck.rows.length) {
+        user.last_seen = null;
       }
     }
-
-    if (online) {
-      res.json({ status: 'online' });
-    } else {
-      const user = await query('SELECT last_seen FROM users WHERE id = $1', [userId]);
-      res.json({ 
-        status: 'offline',
-        last_seen: user.rows[0]?.last_seen
-      });
-    }
+    delete user.privacy_last_seen;
+    res.json(user);
   } catch (err) {
-    logger.error('Error fetching user status:', err);
-    res.status(500).json({ error: 'Failed to fetch status' });
+    logger.error('Get user error', err);
+    res.status(500).json({ error: 'Database error' });
   }
 });
+
+router.put('/me', async (req, res) => {
+  const { username, bio, avatar } = req.body;
+  const updates = [];
+  const params = [];
+  let idx = 1;
+
+  if (username) {
+    if (!/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+      return res.status(400).json({ error: 'Invalid username' });
+    }
+    updates.push(`username = $${idx++}`);
+    params.push(username);
+  }
+  if (bio !== undefined) {
+    updates.push(`bio = $${idx++}`);
+    params.push(bio);
+  }
+  if (avatar !== undefined) {
+    updates.push(`avatar = $${idx++}`);
+    params.push(avatar);
+  }
+
+  if (!updates.length) return res.status(400).json({ error: 'No fields to update' });
+
+  params.push(req.userId);
+  try {
+    const result = await query(
+      `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING id, username, avatar, bio`,
+      params
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
+    logger.error('Update user error', err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+async function setOnline(userId) {
+  await query('UPDATE users SET online = true, last_seen = NOW() WHERE id = $1', [userId]);
+}
+
+async function setOffline(userId) {
+  await query('UPDATE users SET online = false, last_seen = NOW() WHERE id = $1', [userId]);
+}
 
 module.exports = router;
+module.exports.setOnline = setOnline;
+module.exports.setOffline = setOffline;
