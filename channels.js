@@ -3,11 +3,12 @@ const router = express.Router();
 const { query, transaction } = require('./data');
 const { generateId, sanitize } = require('./utils');
 const logger = require('./logger');
-const { ROLES, checkPermission } = require('./security');
+const { ROLES, checkPermission, PERMISSIONS } = require('./security');
 
 // ==================== СОЗДАНИЕ КАНАЛА ====================
 router.post('/', async (req, res) => {
   const { name, description, isPublic = true, username } = req.body;
+  
   if (!name || name.trim().length < 3) {
     return res.status(400).json({ error: 'Channel name must be at least 3 characters' });
   }
@@ -31,11 +32,11 @@ router.post('/', async (req, res) => {
         VALUES ($1, 'channel', $2, $3, $4, $5, NOW())
       `, [chatId, name, description, req.user.id, isPublic]);
 
-      // Добавляем создателя как администратора (или владельца)
+      // Добавляем создателя как владельца
       await client.query(`
         INSERT INTO chat_members (chat_id, user_id, role, joined_at)
         VALUES ($1, $2, $3, NOW())
-      `, [chatId, req.user.id, ROLES.OWNER]); // каналы: создатель = owner
+      `, [chatId, req.user.id, ROLES.OWNER]);
 
       // Если задан username, обновляем (можно хранить в отдельном поле или использовать name)
       if (username) {
@@ -44,7 +45,15 @@ router.post('/', async (req, res) => {
     });
 
     logger.info(`Channel created: ${name} (${chatId}) by user ${req.user.id}`);
-    res.status(201).json({ id: chatId, name, description, isPublic, username: username || null });
+    res.status(201).json({ 
+      id: chatId, 
+      name, 
+      description, 
+      isPublic, 
+      username: username || null,
+      subscribers: 1,
+      postsCount: 0
+    });
   } catch (err) {
     logger.error('Error creating channel:', err);
     res.status(500).json({ error: 'Failed to create channel' });
@@ -57,7 +66,8 @@ router.get('/my', async (req, res) => {
     const channels = await query(`
       SELECT c.*,
         (SELECT COUNT(*) FROM chat_members WHERE chat_id = c.id) as subscribers_count,
-        (SELECT row_to_json(m) FROM messages m WHERE m.chat_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_post
+        (SELECT row_to_json(m) FROM messages m WHERE m.chat_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_post,
+        (SELECT COUNT(*) FROM messages WHERE chat_id = c.id) as posts_count
       FROM chats c
       JOIN chat_members cm ON cm.chat_id = c.id
       WHERE cm.user_id = $1 AND c.type = 'channel'
@@ -73,20 +83,26 @@ router.get('/my', async (req, res) => {
 
 // ==================== ПОЛУЧЕНИЕ ПУБЛИЧНЫХ КАНАЛОВ (ДЛЯ ПОИСКА) ====================
 router.get('/public', async (req, res) => {
-  const { search } = req.query;
+  const { search, limit = 20, offset = 0 } = req.query;
+  
   try {
     let sql = `
       SELECT c.*,
-        (SELECT COUNT(*) FROM chat_members WHERE chat_id = c.id) as subscribers_count
+        (SELECT COUNT(*) FROM chat_members WHERE chat_id = c.id) as subscribers_count,
+        (SELECT COUNT(*) FROM messages WHERE chat_id = c.id) as posts_count
       FROM chats c
       WHERE c.type = 'channel' AND c.is_public = true
     `;
     const params = [];
+    
     if (search && search.length > 0) {
-      sql += ` AND c.name ILIKE $1`;
+      sql += ` AND (c.name ILIKE $${params.length + 1} OR c.description ILIKE $${params.length + 1})`;
       params.push(`%${search}%`);
     }
-    sql += ` ORDER BY subscribers_count DESC LIMIT 50`;
+    
+    sql += ` ORDER BY subscribers_count DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(parseInt(limit), parseInt(offset));
+    
     const channels = await query(sql, params);
     res.json(channels.rows);
   } catch (err) {
@@ -98,6 +114,7 @@ router.get('/public', async (req, res) => {
 // ==================== ПОЛУЧЕНИЕ ИНФОРМАЦИИ О КАНАЛЕ ====================
 router.get('/:channelId', async (req, res) => {
   const { channelId } = req.params;
+  
   try {
     const channel = await query('SELECT * FROM chats WHERE id = $1 AND type = $2', [channelId, 'channel']);
     if (channel.rows.length === 0) {
@@ -114,11 +131,16 @@ router.get('/:channelId', async (req, res) => {
 
     const subscribers = await query('SELECT COUNT(*) FROM chat_members WHERE chat_id = $1', [channelId]);
     const posts = await query('SELECT COUNT(*) FROM messages WHERE chat_id = $1', [channelId]);
+    
+    // Получаем роль текущего пользователя в канале
+    const userRoleRes = await query('SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2', [channelId, req.user.id]);
+    const userRole = userRoleRes.rows[0]?.role || null;
 
     res.json({
       ...channel.rows[0],
       subscribers_count: parseInt(subscribers.rows[0].count),
-      posts_count: parseInt(posts.rows[0].count)
+      posts_count: parseInt(posts.rows[0].count),
+      userRole
     });
   } catch (err) {
     logger.error('Error fetching channel info:', err);
@@ -146,7 +168,14 @@ router.post('/:channelId/subscribe', async (req, res) => {
     `, [channelId, req.user.id, ROLES.MEMBER]);
 
     logger.info(`User ${req.user.id} subscribed to channel ${channelId}`);
-    res.json({ success: true });
+    
+    // Получаем обновлённое количество подписчиков
+    const subscribers = await query('SELECT COUNT(*) FROM chat_members WHERE chat_id = $1', [channelId]);
+    
+    res.json({ 
+      success: true, 
+      subscribers_count: parseInt(subscribers.rows[0].count)
+    });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Already subscribed' });
@@ -172,7 +201,14 @@ router.post('/:channelId/unsubscribe', async (req, res) => {
 
     await query('DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2', [channelId, req.user.id]);
     logger.info(`User ${req.user.id} unsubscribed from channel ${channelId}`);
-    res.json({ success: true });
+    
+    // Получаем обновлённое количество подписчиков
+    const subscribers = await query('SELECT COUNT(*) FROM chat_members WHERE chat_id = $1', [channelId]);
+    
+    res.json({ 
+      success: true,
+      subscribers_count: parseInt(subscribers.rows[0].count)
+    });
   } catch (err) {
     logger.error('Error unsubscribing from channel:', err);
     res.status(500).json({ error: 'Failed to unsubscribe' });
@@ -182,7 +218,7 @@ router.post('/:channelId/unsubscribe', async (req, res) => {
 // ==================== ПОЛУЧЕНИЕ ПОСТОВ КАНАЛА (СООБЩЕНИЙ) ====================
 router.get('/:channelId/posts', async (req, res) => {
   const { channelId } = req.params;
-  const { limit = 20, before } = req.query;
+  const { limit = 20, before, after } = req.query;
 
   try {
     // Проверяем доступ (публичный или подписка)
@@ -198,22 +234,43 @@ router.get('/:channelId/posts', async (req, res) => {
     }
 
     let sql = `
-      SELECT m.*, u.username, u.avatar
+      SELECT m.*, u.username, u.avatar,
+        (SELECT COUNT(*) FROM reactions WHERE message_id = m.id) as reactions_count
       FROM messages m
       JOIN users u ON u.id = m.sender_id
       WHERE m.chat_id = $1
     `;
     const params = [channelId];
+    let paramIndex = 2;
+
     if (before) {
       params.push(before);
-      sql += ` AND m.created_at < $2`;
+      sql += ` AND m.created_at < $${paramIndex++}`;
     }
-    sql += ` ORDER BY m.created_at DESC LIMIT $${params.length + 1}`;
+    if (after) {
+      params.push(after);
+      sql += ` AND m.created_at > $${paramIndex++}`;
+    }
+    
+    sql += ` ORDER BY m.created_at DESC LIMIT $${paramIndex}`;
     params.push(parseInt(limit));
 
     const posts = await query(sql, params);
-    // Возвращаем от новых к старым (как в ленте)
-    res.json(posts.rows);
+    
+    // Добавляем информацию о том, лайкнул ли текущий пользователь пост
+    const postsWithInfo = await Promise.all(posts.rows.map(async (post) => {
+      const userReaction = await query(
+        'SELECT emoji FROM reactions WHERE message_id = $1 AND user_id = $2 LIMIT 1',
+        [post.id, req.user.id]
+      );
+      return {
+        ...post,
+        userReacted: userReaction.rows[0]?.emoji || null,
+        formattedTime: require('./utils').formatRelativeTime(post.created_at)
+      };
+    }));
+
+    res.json(postsWithInfo);
   } catch (err) {
     logger.error('Error fetching channel posts:', err);
     res.status(500).json({ error: 'Failed to fetch posts' });
@@ -248,16 +305,25 @@ router.post('/:channelId/posts', async (req, res) => {
       VALUES ($1, $2, $3, $4, $5, NOW())
     `, [messageId, channelId, req.user.id, safeContent, type]);
 
-    // Обновляем счётчик просмотров? Можно потом добавить
+    // Получаем информацию об авторе
+    const senderRes = await query('SELECT username, avatar FROM users WHERE id = $1', [req.user.id]);
+    const sender = senderRes.rows[0];
 
     const message = {
       id: messageId,
       chatId: channelId,
       senderId: req.user.id,
-      sender: { id: req.user.id, username: req.user.username },
+      sender: { 
+        id: req.user.id, 
+        username: sender.username,
+        avatar: sender.avatar
+      },
       content: safeContent,
       type,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      formattedTime: require('./utils').formatRelativeTime(new Date()),
+      reactions_count: 0,
+      userReacted: null
     };
 
     // Уведомляем подписчиков через WebSocket
@@ -287,11 +353,24 @@ router.get('/:channelId/stats', async (req, res) => {
     const subscribers = await query('SELECT COUNT(*) FROM chat_members WHERE chat_id = $1', [channelId]);
     const posts = await query('SELECT COUNT(*) FROM messages WHERE chat_id = $1', [channelId]);
     const views = await query('SELECT SUM(views) FROM messages WHERE chat_id = $1', [channelId]);
+    
+    // Получаем статистику по дням за последние 30 дней
+    const dailyStats = await query(`
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as posts_count,
+        SUM(views) as views_count
+      FROM messages
+      WHERE chat_id = $1 AND created_at > NOW() - INTERVAL '30 days'
+      GROUP BY DATE(created_at)
+      ORDER BY date DESC
+    `, [channelId]);
 
     res.json({
       subscribers: parseInt(subscribers.rows[0].count),
       posts: parseInt(posts.rows[0].count),
-      views: views.rows[0].sum || 0
+      views: views.rows[0]?.sum || 0,
+      daily: dailyStats.rows
     });
   } catch (err) {
     logger.error('Error fetching channel stats:', err);
@@ -317,6 +396,7 @@ router.put('/:channelId', async (req, res) => {
     const updates = [];
     const params = [];
     let idx = 1;
+    
     if (name) {
       updates.push(`name = $${idx++}`);
       params.push(name);
@@ -336,6 +416,12 @@ router.put('/:channelId', async (req, res) => {
 
     params.push(channelId);
     await query(`UPDATE chats SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+
+    // Уведомление подписчиков об изменении
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`chat:${channelId}`).emit('channelUpdated', { channelId, updates: req.body });
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -357,6 +443,12 @@ router.delete('/:channelId', async (req, res) => {
       return res.status(403).json({ error: 'Only owner can delete channel' });
     }
 
+    // Уведомляем подписчиков перед удалением
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`chat:${channelId}`).emit('channelDeleted', { channelId });
+    }
+
     // Удаляем канал (каскадно удалятся сообщения и подписки)
     await query('DELETE FROM chats WHERE id = $1', [channelId]);
 
@@ -365,6 +457,67 @@ router.delete('/:channelId', async (req, res) => {
   } catch (err) {
     logger.error('Error deleting channel:', err);
     res.status(500).json({ error: 'Failed to delete channel' });
+  }
+});
+
+// ==================== НАЗНАЧЕНИЕ АДМИНИСТРАТОРА (только владелец) ====================
+router.post('/:channelId/admins', async (req, res) => {
+  const { channelId } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const ownerCheck = await query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2 AND role = $3',
+      [channelId, req.user.id, ROLES.OWNER]
+    );
+    if (ownerCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Only owner can appoint admins' });
+    }
+
+    await query(
+      'UPDATE chat_members SET role = $1 WHERE chat_id = $2 AND user_id = $3',
+      [ROLES.ADMIN, channelId, userId]
+    );
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`chat:${channelId}`).emit('adminAppointed', { channelId, userId });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Error appointing admin:', err);
+    res.status(500).json({ error: 'Failed to appoint admin' });
+  }
+});
+
+// ==================== УДАЛЕНИЕ АДМИНИСТРАТОРА (только владелец) ====================
+router.delete('/:channelId/admins/:userId', async (req, res) => {
+  const { channelId, userId } = req.params;
+
+  try {
+    const ownerCheck = await query(
+      'SELECT 1 FROM chat_members WHERE chat_id = $1 AND user_id = $2 AND role = $3',
+      [channelId, req.user.id, ROLES.OWNER]
+    );
+    if (ownerCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Only owner can remove admins' });
+    }
+
+    await query(
+      'UPDATE chat_members SET role = $1 WHERE chat_id = $2 AND user_id = $3',
+      [ROLES.MEMBER, channelId, userId]
+    );
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`chat:${channelId}`).emit('adminRemoved', { channelId, userId });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Error removing admin:', err);
+    res.status(500).json({ error: 'Failed to remove admin' });
   }
 });
 
