@@ -1,5 +1,12 @@
 const winston = require('winston');
 const path = require('path');
+const fs = require('fs');
+
+// Создаём папку для логов, если её нет
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
 // Определяем формат логов
 const logFormat = winston.format.combine(
