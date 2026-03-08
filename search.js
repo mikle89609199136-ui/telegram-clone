@@ -1,11 +1,11 @@
-// search.js — глобальный поиск и поиск по сообщениям
+// search.js – global search and message search
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const logger = require('./logger');
 
-// Глобальный поиск пользователей, каналов, групп
+// Global search (users, public chats)
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { q } = req.query;
@@ -13,7 +13,7 @@ router.get('/', authenticateToken, async (req, res) => {
       return res.json({ users: [], chats: [] });
     }
 
-    // Поиск пользователей
+    // Search users
     const users = await db.query(
       `SELECT id, username, avatar, status, last_seen
        FROM users
@@ -22,7 +22,7 @@ router.get('/', authenticateToken, async (req, res) => {
       [`%${q}%`]
     );
 
-    // Поиск публичных чатов (групп и каналов)
+    // Search public chats (groups and channels)
     const chats = await db.query(
       `SELECT id, type, title, avatar, description, privacy
        FROM chats
@@ -34,11 +34,11 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json({ users: users.rows, chats: chats.rows });
   } catch (err) {
     logger.error('Global search error:', err);
-    res.status(500).json({ error: 'Ошибка поиска' });
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 
-// Поиск сообщений в конкретном чате
+// Search messages in a specific chat
 router.get('/messages/:chatId', authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -49,13 +49,13 @@ router.get('/messages/:chatId', authenticateToken, async (req, res) => {
       return res.json([]);
     }
 
-    // Проверка доступа
+    // Check access
     const access = await db.query(
       'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
     if (access.rows.length === 0) {
-      return res.status(403).json({ error: 'Нет доступа к чату' });
+      return res.status(403).json({ error: 'No access to this chat' });
     }
 
     const result = await db.query(
@@ -71,7 +71,7 @@ router.get('/messages/:chatId', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     logger.error('Message search error:', err);
-    res.status(500).json({ error: 'Ошибка поиска сообщений' });
+    res.status(500).json({ error: 'Message search failed' });
   }
 });
 
