@@ -1,53 +1,71 @@
-const { query } = require('./database');
+// calls.js — звонки (WebRTC сигнализация)
+const express = require('express');
+const router = express.Router();
+const authenticateToken = require('./authMiddleware');
+const { db } = require('./database');
+const { generateId } = require('./utils');
 const logger = require('./logger');
 
-async function handleOffer(socket, data) {
-  const { calleeId, offer, type } = data;
+// Инициировать звонок
+router.post('/start', authenticateToken, async (req, res) => {
   try {
-    const result = await query(
-      'INSERT INTO calls (caller_id, callee_id, type, status) VALUES ($1, $2, $3, $4) RETURNING id',
-      [socket.userId, calleeId, type, 'started']
+    const { calleeId } = req.body;
+    const callerId = req.user.id;
+
+    if (callerId === calleeId) {
+      return res.status(400).json({ error: 'Нельзя позвонить самому себе' });
+    }
+
+    const callId = generateId();
+    await db.query(
+      `INSERT INTO calls (id, caller_id, callee_id, status, started_at)
+       VALUES ($1, $2, $3, 'ongoing', NOW())`,
+      [callId, callerId, calleeId]
     );
-    const callId = result.rows[0].id;
-    socket.to(`user:${calleeId}`).emit('call:incoming', {
-      callId,
-      callerId: socket.userId,
-      offer,
-      type,
-    });
-  } catch (err) {
-    logger.error('handleOffer error', err);
-  }
-}
 
-async function handleAnswer(socket, data) {
-  const { callId, answer, calleeId } = data;
+    res.json({ callId });
+  } catch (err) {
+    logger.error('Start call error:', err);
+    res.status(500).json({ error: 'Ошибка начала звонка' });
+  }
+});
+
+// Завершить звонок
+router.post('/:callId/end', authenticateToken, async (req, res) => {
   try {
-    await query('UPDATE calls SET status = $1 WHERE id = $2', ['answered', callId]);
-    socket.to(`user:${calleeId}`).emit('call:answered', { callId, answer });
+    const { callId } = req.params;
+    await db.query(
+      `UPDATE calls SET status = 'ended', ended_at = NOW() WHERE id = $1`,
+      [callId]
+    );
+    res.json({ success: true });
   } catch (err) {
-    logger.error('handleAnswer error', err);
+    logger.error('End call error:', err);
+    res.status(500).json({ error: 'Ошибка завершения звонка' });
   }
-}
+});
 
-async function handleIceCandidate(socket, data) {
-  const { candidate, targetUserId } = data;
-  socket.to(`user:${targetUserId}`).emit('call:ice-candidate', { candidate, from: socket.userId });
-}
-
-async function handleEnd(socket, data) {
-  const { callId } = data;
+// Получить историю звонков
+router.get('/history', authenticateToken, async (req, res) => {
   try {
-    await query('UPDATE calls SET status = $1, ended_at = NOW() WHERE id = $2', ['ended', callId]);
-    socket.broadcast.emit('call:ended', { callId });
+    const userId = req.user.id;
+    const result = await db.query(
+      `SELECT c.*, 
+        caller.username as caller_username,
+        callee.username as callee_username
+       FROM calls c
+       JOIN users caller ON c.caller_id = caller.id
+       JOIN users callee ON c.callee_id = callee.id
+       WHERE c.caller_id = $1 OR c.callee_id = $1
+       ORDER BY c.started_at DESC
+       LIMIT 50`,
+      [userId]
+    );
+    res.json(result.rows);
   } catch (err) {
-    logger.error('handleEnd error', err);
+    logger.error('Get call history error:', err);
+    res.status(500).json({ error: 'Ошибка получения истории звонков' });
   }
-}
+});
 
-module.exports = {
-  handleOffer,
-  handleAnswer,
-  handleIceCandidate,
-  handleEnd,
-};
+module.exports = router;
