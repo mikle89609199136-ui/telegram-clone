@@ -1,4 +1,4 @@
-// data.js — простой интерфейс для JSON-файлов (как fallback)
+// data.js – simple JSON file storage (fallback)
 const fs = require('fs-extra');
 const path = require('path');
 
