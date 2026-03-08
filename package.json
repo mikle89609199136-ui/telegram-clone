@@ -1,11 +1,17 @@
 {
-  "name": "zhuravlev-telegram",
+  "name": "zhuravlev-messenger",
   "version": "1.0.0",
-  "description": "Telegram clone",
+  "description": "Telegram-like messenger with IRIS AI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "migrate": "node migrate.js",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -24,9 +30,16 @@
     "morgan": "^1.10.0",
     "pg": "^8.11.3",
     "sqlite3": "^5.1.6",
-    "sqlite": "^5.1.1"
+    "sqlite": "^5.1.1",
+    "redis": "^4.6.10",
+    "openai": "^4.20.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
-  }
+    "nodemon": "^3.0.2",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.4"
+  },
+  "keywords": ["telegram", "clone", "messenger", "ai", "iris", "realtime", "socket.io", "railway"],
+  "author": "Mikhail Zhuravlev",
+  "license": "MIT"
 }
