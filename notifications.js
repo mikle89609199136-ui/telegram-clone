@@ -8,18 +8,22 @@ const { db } = require('./database');
 const config = require('./config');
 const logger = require('./logger');
 
-// Настройка web-push (если есть VAPID keys)
+// Настройка web-push, только если заданы VAPID ключи
+let webpushEnabled = false;
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
-    'mailto:' + config.EMAIL.user,
+    'mailto:' + (config.EMAIL.user || 'example@example.com'),
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
+  webpushEnabled = true;
+} else {
+  logger.warn('VAPID keys not set, push notifications disabled');
 }
 
 // Email transporter
 let transporter;
-if (config.EMAIL.host) {
+if (config.EMAIL.host && config.EMAIL.user && config.EMAIL.pass) {
   transporter = nodemailer.createTransport({
     host: config.EMAIL.host,
     port: config.EMAIL.port,
@@ -29,6 +33,8 @@ if (config.EMAIL.host) {
       pass: config.EMAIL.pass,
     },
   });
+} else {
+  logger.warn('Email configuration not set, email notifications disabled');
 }
 
 // ========== ЭНДПОИНТЫ ДЛЯ НАСТРОЕК УВЕДОМЛЕНИЙ ==========
@@ -92,6 +98,8 @@ router.delete('/subscribe/:endpoint', authenticateToken, async (req, res) => {
 
 // Функция для отправки push-уведомления конкретному пользователю (используется в websocket)
 async function sendPushNotification(userId, title, body, data = {}) {
+  if (!webpushEnabled) return;
+
   try {
     const subs = await db.query(
       'SELECT endpoint, keys FROM push_subscriptions WHERE user_id = $1',
@@ -109,6 +117,8 @@ async function sendPushNotification(userId, title, body, data = {}) {
         // Если подписка истекла, удаляем её
         if (err.statusCode === 410) {
           await db.query('DELETE FROM push_subscriptions WHERE endpoint = $1', [sub.endpoint]);
+        } else {
+          logger.error('Push send error:', err);
         }
       }
     }
@@ -122,7 +132,7 @@ async function sendEmail(to, subject, html) {
   if (!transporter) return;
   try {
     await transporter.sendMail({
-      from: config.EMAIL.from,
+      from: config.EMAIL.from || config.EMAIL.user,
       to,
       subject,
       html,
