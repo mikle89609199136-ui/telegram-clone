@@ -1,24 +1,24 @@
-// users.js — управление пользователями
+// users.js – user management
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const { sanitizeUser } = require('./utils');
 
-// Получить информацию о текущем пользователе
+// Get current user
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
+      return res.status(404).json({ error: 'User not found' });
     }
     res.json(sanitizeUser(result.rows[0]));
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Получить пользователя по ID или username
+// Get user by id or username
 router.get('/:identifier', authenticateToken, async (req, res) => {
   try {
     const { identifier } = req.params;
@@ -27,15 +27,15 @@ router.get('/:identifier', authenticateToken, async (req, res) => {
       [identifier]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
+      return res.status(404).json({ error: 'User not found' });
     }
     res.json(result.rows[0]);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка сервера' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Обновить профиль
+// Update profile
 router.put('/me', authenticateToken, async (req, res) => {
   try {
     const { name, avatar, birthday } = req.body;
@@ -47,11 +47,11 @@ router.put('/me', authenticateToken, async (req, res) => {
     const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
     res.json(sanitizeUser(result.rows[0]));
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка обновления профиля' });
+    res.status(500).json({ error: 'Profile update failed' });
   }
 });
 
-// Получить список устройств (сессий)
+// Get devices (sessions)
 router.get('/me/devices', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
@@ -63,18 +63,18 @@ router.get('/me/devices', authenticateToken, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка получения устройств' });
+    res.status(500).json({ error: 'Failed to get devices' });
   }
 });
 
-// Удалить сессию (выйти с устройства)
+// Delete session
 router.delete('/me/devices/:sessionId', authenticateToken, async (req, res) => {
   try {
     const { sessionId } = req.params;
     await db.query('DELETE FROM sessions WHERE id = $1 AND user_id = $2', [sessionId, req.user.id]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Ошибка удаления сессии' });
+    res.status(500).json({ error: 'Failed to delete session' });
   }
 });
 
