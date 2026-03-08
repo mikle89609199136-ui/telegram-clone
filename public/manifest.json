@@ -1,21 +1,25 @@
 {
-  "name": "Zhuravlev Telegram",
-  "short_name": "ZTelegram",
-  "description": "Полноценный клон Telegram",
+  "name": "Zhuravlev Messenger",
+  "short_name": "ZMsg",
+  "description": "Telegram-like messenger with IRIS AI",
   "start_url": "/chat.html",
   "display": "standalone",
-  "background_color": "#0e1621",
-  "theme_color": "#17212b",
+  "background_color": "#0f0f10",
+  "theme_color": "#1e1f22",
+  "orientation": "portrait",
+  "scope": "/",
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
