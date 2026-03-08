@@ -1,42 +1,33 @@
+// security.js — настройки безопасности (helmet, cors, rate limit)
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const csrf = require('csurf');
-const client = require('prom-client');
 const config = require('./config');
 
-function applySecurity(app) {
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", "data:", "*"],
-        connectSrc: ["'self'", "ws:", "wss:"],
-      },
+const corsOptions = {
+  origin: config.FRONTEND_URL,
+  optionsSuccessStatus: 200,
+};
+
+// Правило 58
+const limiter = rateLimit({
+  windowMs: config.RATE_LIMIT.windowMs,
+  max: config.RATE_LIMIT.max,
+  message: { error: 'Слишком много запросов, попробуйте позже' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const helmetConfig = {
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.socket.io"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://cdn.socket.io", config.FRONTEND_URL],
     },
-  }));
+  },
+};
 
-  app.use(cors({ origin: config.corsOrigin, credentials: true }));
-
-  const apiLimiter = rateLimit({
-    windowMs: config.rateLimitWindowMs,
-    max: config.rateLimitMax,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: (req) => req.ip,
-  });
-  app.use('/api/', apiLimiter);
-
-  const csrfProtection = csrf({ cookie: true });
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/auth')) return next();
-    csrfProtection(req, res, next);
-  });
-
-  const collectDefaultMetrics = client.collectDefaultMetrics;
-  collectDefaultMetrics({ timeout: 5000 });
-}
-
-module.exports = { applySecurity };
+module.exports = { corsOptions, limiter, helmetConfig };
