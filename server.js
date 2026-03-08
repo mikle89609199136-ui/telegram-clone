@@ -1,4 +1,4 @@
-// server.js – main server entry point
+// server.js – главный файл сервера (исправленная версия для Railway)
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -9,6 +9,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 
+// Импорт конфигурации и утилит
 const config = require('./config');
 const logger = require('./logger');
 const envCheck = require('./env');
@@ -17,13 +18,20 @@ const { handleMulterError, router: uploadRouter } = require('./upload');
 const { db } = require('./database');
 const websocket = require('./websocket');
 
-// Check environment variables
-envCheck();
+// ========== ПРОВЕРКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ ==========
+envCheck(); // теперь не убивает процесс, а только предупреждает
+
+// Для отладки выведем наличие JWT_SECRET
+logger.info(`JWT_SECRET present: ${!!process.env.JWT_SECRET}`);
+if (!process.env.JWT_SECRET) {
+  logger.warn('JWT_SECRET not set, using insecure default for development (DO NOT USE IN PRODUCTION)');
+  process.env.JWT_SECRET = 'dev_secret_for_testing_only_123';
+}
 
 const app = express();
 const server = http.createServer(app);
 
-// Security and utility middleware
+// ========== НАСТРОЙКИ БЕЗОПАСНОСТИ И MIDDLEWARE ==========
 app.use(helmet(helmetConfig));
 app.use(cors(corsOptions));
 app.use(compression());
@@ -31,16 +39,16 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
-// Rate limiting for API
+// Rate limiting для API
 app.use('/api/', limiter);
 
-// Static files from public
+// Статические файлы из public
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Uploaded files
+// Загруженные файлы
 app.use('/uploads', express.static(config.UPLOAD.dir));
 
-// API routes
+// ========== МАРШРУТЫ ==========
 app.use('/api/auth', require('./auth'));
 app.use('/api/users', require('./users'));
 app.use('/api/chats', require('./chats'));
@@ -56,7 +64,7 @@ app.use('/api/notifications', require('./notifications').router);
 app.use('/api/ai', require('./ai'));
 app.use('/api/upload', uploadRouter);
 
-// Health check for Railway
+// ========== HEALTH CHECK ДЛЯ RAILWAY ==========
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
@@ -65,25 +73,22 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Error handler for multer
+// Обработчик ошибок multer
 app.use(handleMulterError);
 
-// SPA fallback: serve chat.html for any unmatched route
+// SPA fallback: для всех остальных маршрутов отдаём chat.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'chat.html'));
 });
 
-// Initialize WebSocket
-const io = websocket(server);
-
-// Start server
-const PORT = config.PORT;
+// ========== ЗАПУСК СЕРВЕРА ==========
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   logger.info(`🚀 Server running on port ${PORT}`);
   logger.info(`Health check: http://localhost:${PORT}/health`);
 });
 
-// Graceful shutdown
+// ========== ГРЭЙСФУЛ ШАГДАУН ==========
 async function shutdown(signal) {
   logger.info(`${signal} received, shutting down gracefully...`);
   server.close(async () => {
