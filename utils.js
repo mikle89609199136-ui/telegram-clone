@@ -1,80 +1,70 @@
-const Redis = require('ioredis');
-const Bull = require('bull');
+// utils.js — вспомогательные функции
+const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const config = require('./config');
-const logger = require('./logger');
 
-let redis;
-let queues = {};
-
-function getRedis() {
-  if (!redis) {
-    redis = new Redis(config.redisUrl, {
-      tls: config.redisTls ? {} : undefined,
-      retryStrategy: (times) => Math.min(times * 50, 2000)
-    });
-    redis.on('error', (err) => logger.error('Redis error', err));
-  }
-  return redis;
+// Хеширование пароля
+async function hashPassword(password) {
+  return bcrypt.hash(password, config.BCRYPT_ROUNDS);
 }
 
-function getQueue(name) {
-  if (!queues[name]) {
-    queues[name] = new Bull(name, config.queueUrl, {
-      redis: { tls: config.redisTls ? {} : undefined }
-    });
-    queues[name].on('error', (err) => logger.error(`Queue ${name} error`, err));
-  }
-  return queues[name];
+// Сравнение пароля с хешем
+async function comparePassword(password, hash) {
+  return bcrypt.compare(password, hash);
 }
 
-async function addToQueue(name, data, opts = {}) {
-  const queue = getQueue(name);
-  const job = await queue.add(data, opts);
-  return job.id;
-}
-
+// Генерация уникального ID
 function generateId() {
   return uuidv4();
 }
 
-function sanitizeHtml(html) {
-  // Basic sanitization (use a library in production)
-  return html.replace(/<script.*?>.*?<\/script>/gi, '');
+// Санитизация пользователя (удаление чувствительных полей)
+function sanitizeUser(user) {
+  if (!user) return null;
+  const { password_hash, ...safe } = user;
+  return safe;
 }
 
+// Форматирование времени для чата
+function formatMessageTime(timestamp) {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+
+  if (diff < 60000) return 'только что';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} мин назад`;
+  if (diff < 86400000) return date.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleDateString('ru', { day: 'numeric', month: 'short' });
+}
+
+// Экранирование HTML (Правило 23)
 function escapeHtml(unsafe) {
-  return unsafe.replace(/[&<>"]/g, (m) => {
-    if (m === '&') return '&amp;';
-    if (m === '<') return '&lt;';
-    if (m === '>') return '&gt;';
-    if (m === '"') return '&quot;';
-    return m;
-  });
+  if (!unsafe) return '';
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-function validateEmail(email) {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return re.test(email);
+// Проверка MIME-типа (Правило 59)
+function isAllowedMimeType(mimeType) {
+  return config.UPLOAD.allowedMime.includes(mimeType);
 }
 
-function validateUsername(username) {
-  const re = /^[a-zA-Z0-9_]{3,30}$/;
-  return re.test(username);
-}
-
-function maskPassword(pass) {
-  return pass ? '********' : '';
+// Генерация случайной строки
+function randomString(length = 10) {
+  return Math.random().toString(36).substring(2, 2 + length);
 }
 
 module.exports = {
-  getRedis,
-  getQueue,
-  addToQueue,
+  hashPassword,
+  comparePassword,
   generateId,
-  sanitizeHtml,
+  sanitizeUser,
+  formatMessageTime,
   escapeHtml,
-  validateEmail,
-  validateUsername,
-  maskPassword,
+  isAllowedMimeType,
+  randomString,
 };
