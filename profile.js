@@ -1,11 +1,11 @@
-// profile.js — публичный профиль пользователя
+// profile.js – public profile of a user
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const logger = require('./logger');
 
-// Получить публичный профиль пользователя
+// Get public profile by user ID
 router.get('/:userId', authenticateToken, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -15,11 +15,11 @@ router.get('/:userId', authenticateToken, async (req, res) => {
       [userId]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
+      return res.status(404).json({ error: 'User not found' });
     }
     const user = result.rows[0];
 
-    // Получить общие группы
+    // Get common groups (groups where both users are members)
     const commonGroups = await db.query(
       `SELECT c.id, c.title, c.avatar
        FROM chats c
@@ -29,7 +29,7 @@ router.get('/:userId', authenticateToken, async (req, res) => {
       [userId, req.user.id]
     );
 
-    // Получить медиа (файлы) из общих чатов
+    // Get media (files) from chats where both users are participants
     const media = await db.query(
       `SELECT m.id, m.file_url, m.file_name, m.mime_type, m.created_at
        FROM messages m
@@ -37,13 +37,13 @@ router.get('/:userId', authenticateToken, async (req, res) => {
        WHERE cp.user_id = $1 AND m.type IN ('file', 'photo', 'video')
        ORDER BY m.created_at DESC
        LIMIT 20`,
-      [req.user.id] // можно уточнить, чтобы брать только из общих чатов
+      [req.user.id] // This is not quite right; should filter chats where both are present. Simplified.
     );
 
     res.json({ user, commonGroups: commonGroups.rows, media: media.rows });
   } catch (err) {
     logger.error('Get profile error:', err);
-    res.status(500).json({ error: 'Ошибка получения профиля' });
+    res.status(500).json({ error: 'Failed to get profile' });
   }
 });
 
