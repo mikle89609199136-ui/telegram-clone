@@ -1,4 +1,4 @@
-// config.js – centralized configuration
+// config.js – централизованная конфигурация
 const path = require('path');
 require('dotenv').config();
 
@@ -15,7 +15,7 @@ module.exports = {
     name: process.env.DB_NAME || 'telegram_clone',
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
-    dialect: process.env.DB_DIALECT || 'postgres',
+    dialect: process.env.DB_DIALECT || 'sqlite', // <-- меняем на sqlite по умолчанию
     storage: path.join(__dirname, 'data', 'database.sqlite'),
   },
 
