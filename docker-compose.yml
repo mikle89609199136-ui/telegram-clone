@@ -3,7 +3,7 @@ version: '3.8'
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: telegram_postgres
+    container_name: messenger_postgres
     restart: always
     environment:
       POSTGRES_DB: telegram_clone
@@ -14,24 +14,24 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - telegram_network
+      - messenger_network
 
   redis:
     image: redis:7-alpine
-    container_name: telegram_redis
+    container_name: messenger_redis
     restart: always
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
-      - telegram_network
+      - messenger_network
 
   app:
     build:
       context: .
       dockerfile: Dockerfile.txt
-    container_name: telegram_app
+    container_name: messenger_app
     restart: always
     depends_on:
       - postgres
@@ -49,6 +49,7 @@ services:
       EMAIL_USER: ${EMAIL_USER}
       EMAIL_PASS: ${EMAIL_PASS}
       FRONTEND_URL: ${FRONTEND_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
     ports:
       - "3000:3000"
     volumes:
@@ -56,7 +57,7 @@ services:
       - logs:/app/logs
       - data:/app/data
     networks:
-      - telegram_network
+      - messenger_network
 
 volumes:
   postgres_data:
@@ -66,5 +67,5 @@ volumes:
   data:
 
 networks:
-  telegram_network:
+  messenger_network:
     driver: bridge
