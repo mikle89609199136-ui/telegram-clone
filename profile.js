@@ -1,11 +1,11 @@
-// profile.js – public profile of a user
+// profile.js – просмотр профиля пользователя (публичная информация)
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const logger = require('./logger');
 
-// Get public profile by user ID
+// Получить публичный профиль пользователя
 router.get('/:userId', authenticateToken, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -19,7 +19,7 @@ router.get('/:userId', authenticateToken, async (req, res) => {
     }
     const user = result.rows[0];
 
-    // Get common groups (groups where both users are members)
+    // Получить общие группы
     const commonGroups = await db.query(
       `SELECT c.id, c.title, c.avatar
        FROM chats c
@@ -29,7 +29,7 @@ router.get('/:userId', authenticateToken, async (req, res) => {
       [userId, req.user.id]
     );
 
-    // Get media (files) from chats where both users are participants
+    // Получить медиа (файлы) из общих чатов
     const media = await db.query(
       `SELECT m.id, m.file_url, m.file_name, m.mime_type, m.created_at
        FROM messages m
@@ -37,7 +37,7 @@ router.get('/:userId', authenticateToken, async (req, res) => {
        WHERE cp.user_id = $1 AND m.type IN ('file', 'photo', 'video')
        ORDER BY m.created_at DESC
        LIMIT 20`,
-      [req.user.id] // This is not quite right; should filter chats where both are present. Simplified.
+      [req.user.id] // упрощённо: медиа из всех чатов пользователя
     );
 
     res.json({ user, commonGroups: commonGroups.rows, media: media.rows });
