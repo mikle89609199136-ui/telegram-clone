@@ -1,11 +1,11 @@
-// channels.js — специфичные для каналов операции (подписка/отписка)
+// channels.js – channel specific operations
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const logger = require('./logger');
 
-// Подписаться на канал
+// Subscribe to a channel
 router.post('/:channelId/subscribe', authenticateToken, async (req, res) => {
   try {
     const { channelId } = req.params;
@@ -13,7 +13,7 @@ router.post('/:channelId/subscribe', authenticateToken, async (req, res) => {
 
     const channel = await db.query('SELECT type FROM chats WHERE id = $1', [channelId]);
     if (channel.rows.length === 0 || channel.rows[0].type !== 'channel') {
-      return res.status(400).json({ error: 'Указан не канал' });
+      return res.status(400).json({ error: 'Not a channel' });
     }
 
     await db.query(
@@ -25,11 +25,11 @@ router.post('/:channelId/subscribe', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Subscribe to channel error:', err);
-    res.status(500).json({ error: 'Ошибка подписки на канал' });
+    res.status(500).json({ error: 'Failed to subscribe' });
   }
 });
 
-// Отписаться от канала
+// Unsubscribe from channel
 router.delete('/:channelId/subscribe', authenticateToken, async (req, res) => {
   try {
     const { channelId } = req.params;
@@ -41,7 +41,7 @@ router.delete('/:channelId/subscribe', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Unsubscribe from channel error:', err);
-    res.status(500).json({ error: 'Ошибка отписки от канала' });
+    res.status(500).json({ error: 'Failed to unsubscribe' });
   }
 });
 
