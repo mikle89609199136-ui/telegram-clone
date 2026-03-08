@@ -1,11 +1,11 @@
-// contacts.js — контакты и локальные имена
+// contacts.js – contacts and local names
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const logger = require('./logger');
 
-// Получить список контактов
+// Get all contacts
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
@@ -19,11 +19,11 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     logger.error('Get contacts error:', err);
-    res.status(500).json({ error: 'Ошибка получения контактов' });
+    res.status(500).json({ error: 'Failed to get contacts' });
   }
 });
 
-// Добавить контакт
+// Add contact
 router.post('/', authenticateToken, async (req, res) => {
   try {
     const { contactId, localName } = req.body;
@@ -31,7 +31,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
     const user = await db.query('SELECT id FROM users WHERE id = $1', [contactId]);
     if (user.rows.length === 0) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     await db.query(
@@ -43,11 +43,11 @@ router.post('/', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Add contact error:', err);
-    res.status(500).json({ error: 'Ошибка добавления контакта' });
+    res.status(500).json({ error: 'Failed to add contact' });
   }
 });
 
-// Удалить контакт
+// Delete contact
 router.delete('/:contactId', authenticateToken, async (req, res) => {
   try {
     const { contactId } = req.params;
@@ -58,7 +58,7 @@ router.delete('/:contactId', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Delete contact error:', err);
-    res.status(500).json({ error: 'Ошибка удаления контакта' });
+    res.status(500).json({ error: 'Failed to delete contact' });
   }
 });
 
