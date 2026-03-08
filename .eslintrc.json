@@ -5,8 +5,7 @@
     "browser": true
   },
   "extends": [
-    "eslint:recommended",
-    "plugin:node/recommended"
+    "eslint:recommended"
   ],
   "parserOptions": {
     "ecmaVersion": 12,
@@ -15,14 +14,9 @@
   "rules": {
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
     "no-console": ["error", { "allow": ["warn", "error"] }],
-    "node/exports-style": ["error", "module.exports"],
-    "node/no-unpublished-require": "off",
-    "node/no-missing-require": ["error", {
-      "allowModules": [],
-      "resolvePaths": ["./src"]
-    }],
     "semi": ["error", "always"],
-    "quotes": ["error", "single"]
+    "quotes": ["error", "single"],
+    "indent": ["error", 2]
   },
-  "ignorePatterns": ["public/", "dist/", "node_modules/"]
+  "ignorePatterns": ["public/", "node_modules/"]
 }
