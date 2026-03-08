@@ -1,4 +1,4 @@
-// messages.js — работа с сообщениями, реакциями, опросами
+// messages.js – message handling
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
@@ -6,20 +6,19 @@ const { db } = require('./database');
 const { generateId, escapeHtml } = require('./utils');
 const logger = require('./logger');
 
-// Получить сообщения чата (с пагинацией)
+// Get messages for a chat (with pagination)
 router.get('/:chatId', authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params;
-    const { limit = 50, before } = req.query; // before = timestamp последнего полученного сообщения
+    const { limit = 50, before } = req.query;
     const userId = req.user.id;
 
-    // Проверка доступа
     const access = await db.query(
       'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
       [chatId, userId]
     );
     if (access.rows.length === 0) {
-      return res.status(403).json({ error: 'Нет доступа к чату' });
+      return res.status(403).json({ error: 'No access to this chat' });
     }
 
     let query = `
@@ -43,48 +42,45 @@ router.get('/:chatId', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     logger.error('Get messages error:', err);
-    res.status(500).json({ error: 'Ошибка получения сообщений' });
+    res.status(500).json({ error: 'Failed to get messages' });
   }
 });
 
-// Отправить сообщение
+// Send a message
 router.post('/:chatId', authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params;
-    const { content, type = 'text', fileUrl, fileName, fileSize, mimeType, pollData } = req.body;
+    const { content, type = 'text', fileUrl, fileName, fileSize, mimeType, pollData, aiMetadata } = req.body;
     const senderId = req.user.id;
 
-    // Проверка доступа
     const access = await db.query(
       'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
       [chatId, senderId]
     );
     if (access.rows.length === 0) {
-      return res.status(403).json({ error: 'Нет доступа к чату' });
+      return res.status(403).json({ error: 'No access to this chat' });
     }
 
     const messageId = generateId();
     await db.query(
-      `INSERT INTO messages (id, chat_id, sender_id, content, type, file_url, file_name, file_size, mime_type, poll_data, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
-      [messageId, chatId, senderId, content, type, fileUrl, fileName, fileSize, mimeType, pollData ? JSON.stringify(pollData) : null]
+      `INSERT INTO messages (id, chat_id, sender_id, content, type, file_url, file_name, file_size, mime_type, poll_data, ai_metadata, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+      [messageId, chatId, senderId, content, type, fileUrl, fileName, fileSize, mimeType, pollData ? JSON.stringify(pollData) : null, aiMetadata ? JSON.stringify(aiMetadata) : null]
     );
 
     const newMsg = await db.query(
       `SELECT m.*, u.username as sender_username, u.avatar as sender_avatar
-       FROM messages m
-       JOIN users u ON m.sender_id = u.id
-       WHERE m.id = $1`,
+       FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.id = $1`,
       [messageId]
     );
     res.status(201).json(newMsg.rows[0]);
   } catch (err) {
     logger.error('Send message error:', err);
-    res.status(500).json({ error: 'Ошибка отправки сообщения' });
+    res.status(500).json({ error: 'Failed to send message' });
   }
 });
 
-// Добавить реакцию
+// Add reaction
 router.post('/:messageId/reactions', authenticateToken, async (req, res) => {
   try {
     const { messageId } = req.params;
@@ -100,11 +96,11 @@ router.post('/:messageId/reactions', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Add reaction error:', err);
-    res.status(500).json({ error: 'Ошибка добавления реакции' });
+    res.status(500).json({ error: 'Failed to add reaction' });
   }
 });
 
-// Удалить реакцию
+// Remove reaction
 router.delete('/:messageId/reactions/:reaction', authenticateToken, async (req, res) => {
   try {
     const { messageId, reaction } = req.params;
@@ -116,32 +112,30 @@ router.delete('/:messageId/reactions/:reaction', authenticateToken, async (req, 
     res.json({ success: true });
   } catch (err) {
     logger.error('Remove reaction error:', err);
-    res.status(500).json({ error: 'Ошибка удаления реакции' });
+    res.status(500).json({ error: 'Failed to remove reaction' });
   }
 });
 
-// Удалить сообщение (у себя или у всех)
+// Delete message (for self or for all)
 router.delete('/:messageId', authenticateToken, async (req, res) => {
   try {
     const { messageId } = req.params;
-    const { forAll } = req.query; // если true, удаляем у всех (только админ/владелец)
+    const { forAll } = req.query;
     const userId = req.user.id;
 
     const msg = await db.query('SELECT sender_id, chat_id FROM messages WHERE id = $1', [messageId]);
-    if (msg.rows.length === 0) return res.status(404).json({ error: 'Сообщение не найдено' });
+    if (msg.rows.length === 0) return res.status(404).json({ error: 'Message not found' });
 
     if (forAll === 'true') {
-      // Проверка прав на удаление у всех
       const roleCheck = await db.query(
         'SELECT role FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
         [msg.rows[0].chat_id, userId]
       );
       if (roleCheck.rows.length === 0 || !['owner', 'admin'].includes(roleCheck.rows[0].role)) {
-        return res.status(403).json({ error: 'Недостаточно прав для удаления сообщения у всех' });
+        return res.status(403).json({ error: 'Insufficient permissions to delete for all' });
       }
       await db.query('DELETE FROM messages WHERE id = $1', [messageId]);
     } else {
-      // Удаляем только у себя (помечаем как удалённое)
       await db.query(
         'INSERT INTO hidden_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
         [userId, messageId]
@@ -150,7 +144,7 @@ router.delete('/:messageId', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Delete message error:', err);
-    res.status(500).json({ error: 'Ошибка удаления сообщения' });
+    res.status(500).json({ error: 'Failed to delete message' });
   }
 });
 
