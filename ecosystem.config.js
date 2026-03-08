@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: 'telegram-clone',
+    name: 'zhuravlev-messenger',
     script: './server.js',
     instances: 1,
     autorestart: true,
