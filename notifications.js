@@ -1,14 +1,14 @@
-// notifications.js – push notifications and email
+// notifications.js – управление уведомлениями (push, email)
 const express = require('express');
-const router = express.Router();
 const webpush = require('web-push');
 const nodemailer = require('nodemailer');
+const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const config = require('./config');
 const logger = require('./logger');
 
-// Configure web-push (if VAPID keys are set)
+// Настройка web-push (если есть VAPID keys)
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
     'mailto:' + config.EMAIL.user,
@@ -18,9 +18,9 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 }
 
 // Email transporter
-let transporter = null;
-if (config.EMAIL.host && config.EMAIL.user) {
-  transporter = nodemailer.createTransporter({
+let transporter;
+if (config.EMAIL.host) {
+  transporter = nodemailer.createTransport({
     host: config.EMAIL.host,
     port: config.EMAIL.port,
     secure: config.EMAIL.port === 465,
@@ -31,36 +31,7 @@ if (config.EMAIL.host && config.EMAIL.user) {
   });
 }
 
-// Send email function
-async function sendEmail(to, subject, html) {
-  if (!transporter) return;
-  try {
-    await transporter.sendMail({
-      from: config.EMAIL.from,
-      to,
-      subject,
-      html,
-    });
-  } catch (err) {
-    logger.error('Failed to send email:', err);
-  }
-}
-
-// Send verification email
-async function sendVerificationEmail(to, token) {
-  const link = `${config.FRONTEND_URL}/verify?token=${token}`;
-  const html = `<p>Please verify your email by clicking <a href="${link}">this link</a>.</p>`;
-  return sendEmail(to, 'Verify your email', html);
-}
-
-// Send password reset email
-async function sendPasswordResetEmail(to, token) {
-  const link = `${config.FRONTEND_URL}/reset-password?token=${token}`;
-  const html = `<p>To reset your password, click <a href="${link}">this link</a>. It expires in 1 hour.</p>`;
-  return sendEmail(to, 'Password reset', html);
-}
-
-// Get notification settings for current user
+// ========== ЭНДПОИНТЫ ДЛЯ НАСТРОЕК УВЕДОМЛЕНИЙ ==========
 router.get('/settings', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
@@ -74,7 +45,21 @@ router.get('/settings', authenticateToken, async (req, res) => {
   }
 });
 
-// Subscribe to push notifications
+router.put('/settings', authenticateToken, async (req, res) => {
+  try {
+    const settings = req.body;
+    await db.query(
+      'UPDATE users SET notification_settings = $1 WHERE id = $2',
+      [JSON.stringify(settings), req.user.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Update notification settings error:', err);
+    res.status(500).json({ error: 'Failed to update notification settings' });
+  }
+});
+
+// ========== PUSH-ПОДПИСКИ ==========
 router.post('/subscribe', authenticateToken, async (req, res) => {
   try {
     const subscription = req.body;
@@ -91,7 +76,6 @@ router.post('/subscribe', authenticateToken, async (req, res) => {
   }
 });
 
-// Unsubscribe
 router.delete('/subscribe/:endpoint', authenticateToken, async (req, res) => {
   try {
     const { endpoint } = req.params;
@@ -106,36 +90,63 @@ router.delete('/subscribe/:endpoint', authenticateToken, async (req, res) => {
   }
 });
 
-// Send a push notification to a specific user (internal function)
+// Функция для отправки push-уведомления конкретному пользователю (используется в websocket)
 async function sendPushNotification(userId, title, body, data = {}) {
   try {
     const subs = await db.query(
       'SELECT endpoint, keys FROM push_subscriptions WHERE user_id = $1',
       [userId]
     );
-    for (const row of subs.rows) {
-      const subscription = {
-        endpoint: row.endpoint,
-        keys: row.keys,
-      };
-      const payload = JSON.stringify({ title, body, data });
-      webpush.sendNotification(subscription, payload).catch(err => {
-        logger.error('Push send error:', err);
-        // If subscription expired, remove it
+    const payload = JSON.stringify({ title, body, data });
+    for (const sub of subs.rows) {
+      try {
+        const subscription = {
+          endpoint: sub.endpoint,
+          keys: sub.keys,
+        };
+        await webpush.sendNotification(subscription, payload);
+      } catch (err) {
+        // Если подписка истекла, удаляем её
         if (err.statusCode === 410) {
-          db.query('DELETE FROM push_subscriptions WHERE endpoint = $1', [row.endpoint]);
+          await db.query('DELETE FROM push_subscriptions WHERE endpoint = $1', [sub.endpoint]);
         }
-      });
+      }
     }
   } catch (err) {
-    logger.error('Failed to send push notification:', err);
+    logger.error('Send push notification error:', err);
   }
+}
+
+// ========== EMAIL ФУНКЦИИ ==========
+async function sendEmail(to, subject, html) {
+  if (!transporter) return;
+  try {
+    await transporter.sendMail({
+      from: config.EMAIL.from,
+      to,
+      subject,
+      html,
+    });
+  } catch (err) {
+    logger.error('Send email error:', err);
+  }
+}
+
+function sendVerificationEmail(to, token) {
+  const link = `${config.FRONTEND_URL}/verify?token=${token}`;
+  const html = `<p>Для подтверждения email перейдите по ссылке: <a href="${link}">${link}</a></p>`;
+  return sendEmail(to, 'Подтверждение email', html);
+}
+
+function sendPasswordResetEmail(to, token) {
+  const link = `${config.FRONTEND_URL}/reset-password?token=${token}`;
+  const html = `<p>Для сброса пароля перейдите по ссылке: <a href="${link}">${link}</a></p>`;
+  return sendEmail(to, 'Сброс пароля', html);
 }
 
 module.exports = {
   router,
-  sendEmail,
+  sendPushNotification,
   sendVerificationEmail,
   sendPasswordResetEmail,
-  sendPushNotification,
 };
