@@ -1,13 +1,6 @@
 // app.js — клиентская логика SPA
 
-// ==================== ИНИЦИАЛИЗАЦИЯ ====================
-const socket = io({
-  auth: { token: localStorage.getItem('token') },
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000,
-});
-
+let socket = null;
 let currentUser = null;
 let currentChatId = null;
 let chats = [];
@@ -25,34 +18,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   appEl = document.getElementById('app');
   const token = localStorage.getItem('token');
 
-  if (!token && window.location.pathname !== '/') {
+  if (!token) {
     window.location.href = '/';
     return;
   }
 
-  if (token) {
-    try {
-      await loadUser();
-      await loadChats();
-      await loadContacts();
-      await loadFolders();
-      renderMainLayout();
-      setupSocket();
-    } catch (err) {
-      console.error('Failed to initialize app', err);
-      localStorage.removeItem('token');
-      window.location.href = '/';
-    }
-  } else {
-    // Показываем страницу входа/регистрации (она загружается отдельно)
-    // В chat.html она не нужна, так как это основное приложение.
-    // Страница входа будет в корне (index.html), но по условию задачи у нас только chat.html.
-    // Для простоты сделаем редирект на корень, где index.html содержит формы.
+  try {
+    await loadUser();
+    await loadChats();
+    await loadContacts();
+    await loadFolders();
+    renderMainLayout();
+    setupSocket();
+  } catch (err) {
+    console.error('Failed to initialize app', err);
+    localStorage.removeItem('token');
     window.location.href = '/';
   }
 });
 
-// ==================== ЗАГРУЗКА ДАННЫХ ====================
+// Загрузка данных
 async function loadUser() {
   const res = await fetch('/api/users/me', {
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
@@ -86,9 +71,8 @@ async function loadFolders() {
   folders = await res.json();
 }
 
-// ==================== РЕНДЕР ====================
+// Рендер главного макета
 function renderMainLayout() {
-  // Определяем, десктоп или мобила
   const isDesktop = window.innerWidth >= 768;
   appEl.className = isDesktop ? 'desktop-layout' : '';
 
@@ -111,11 +95,7 @@ function renderMainLayout() {
   `;
 
   renderChatList();
-
-  // Если есть текущий чат (например, после перезагрузки), открываем его
-  if (currentChatId) {
-    openChat(currentChatId);
-  }
+  if (currentChatId) openChat(currentChatId);
 }
 
 function renderChatList() {
@@ -123,7 +103,6 @@ function renderChatList() {
   if (!listEl) return;
   listEl.innerHTML = '';
 
-  // Сортировка: закреплённые сверху, потом по дате последнего сообщения
   const sorted = [...chats].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
@@ -266,12 +245,7 @@ function initEmojiPicker() {
   picker.innerHTML = emojis.map(e => `<span class="emoji-item" onclick="addEmoji('${e}')">${e}</span>`).join('');
 }
 
-function scrollToBottom() {
-  const area = document.getElementById('messages-area');
-  if (area) area.scrollTop = area.scrollHeight;
-}
-
-// ==================== API ВЗАИМОДЕЙСТВИЯ ====================
+// API-функции
 async function openChat(chatId) {
   currentChatId = chatId;
   try {
@@ -281,7 +255,7 @@ async function openChat(chatId) {
     if (!res.ok) throw new Error('Failed to load messages');
     messages = await res.json();
     renderMessages();
-    socket.emit('joinChat', chatId);
+    socket?.emit('joinChat', chatId);
   } catch (err) {
     console.error(err);
   }
@@ -289,7 +263,7 @@ async function openChat(chatId) {
 
 function closeChat() {
   currentChatId = null;
-  renderMainLayout(); // возвращаемся к списку
+  renderMainLayout();
 }
 
 async function sendMessage() {
@@ -352,7 +326,6 @@ async function addReaction(messageId, reaction) {
       },
       body: JSON.stringify({ reaction })
     });
-    // Обновим сообщение локально
     const msg = messages.find(m => m.id === messageId);
     if (msg) {
       if (!msg.reactions) msg.reactions = [];
@@ -364,7 +337,7 @@ async function addReaction(messageId, reaction) {
   }
 }
 
-// ==================== УТИЛИТЫ ====================
+// Утилиты
 function formatTime(timestamp) {
   if (!timestamp) return '';
   const d = new Date(timestamp);
@@ -395,11 +368,11 @@ function handleTyping() {
     if (input.value.trim()) {
       btn.className = 'voice-btn send-btn';
       btn.textContent = '➤';
-      socket.emit('typing', { chatId: currentChatId, isTyping: true });
+      socket?.emit('typing', { chatId: currentChatId, isTyping: true });
     } else {
       btn.className = 'voice-btn';
       btn.textContent = '🎤';
-      socket.emit('typing', { chatId: currentChatId, isTyping: false });
+      socket?.emit('typing', { chatId: currentChatId, isTyping: false });
     }
   }
 }
@@ -419,17 +392,21 @@ function addEmoji(emoji) {
   toggleEmojiPicker();
 }
 
-// ==================== КОНТЕКСТНОЕ МЕНЮ ====================
+function scrollToBottom() {
+  const area = document.getElementById('messages-area');
+  if (area) area.scrollTop = area.scrollHeight;
+}
+
+// Контекстное меню
 function showMessageContextMenu(e, msg) {
   e.preventDefault();
   contextMessage = msg;
-  const menu = document.getElementById('message-context-menu');
+  let menu = document.getElementById('message-context-menu');
   if (!menu) {
-    // Создаём меню, если его нет
-    const newMenu = document.createElement('div');
-    newMenu.id = 'message-context-menu';
-    newMenu.className = 'message-context-menu';
-    newMenu.innerHTML = `
+    menu = document.createElement('div');
+    menu.id = 'message-context-menu';
+    menu.className = 'message-context-menu';
+    menu.innerHTML = `
       <div class="message-context-item" onclick="contextReply()">↩️ Ответить</div>
       <div class="message-context-item" onclick="contextForward()">➡️ Переслать</div>
       <div class="message-context-item" onclick="contextCopy()">📋 Копировать</div>
@@ -440,21 +417,15 @@ function showMessageContextMenu(e, msg) {
       <div class="message-context-item" onclick="contextReact('😡')">😡 Поставить реакцию</div>
       <div class="message-context-item" onclick="contextDelete()">❌ Удалить</div>
     `;
-    document.body.appendChild(newMenu);
-    document.getElementById('message-context-menu').style.display = 'block';
-    document.getElementById('message-context-menu').style.left = e.pageX + 'px';
-    document.getElementById('message-context-menu').style.top = e.pageY + 'px';
-  } else {
-    menu.style.display = 'block';
-    menu.style.left = e.pageX + 'px';
-    menu.style.top = e.pageY + 'px';
+    document.body.appendChild(menu);
   }
+  menu.style.display = 'block';
+  menu.style.left = e.pageX + 'px';
+  menu.style.top = e.pageY + 'px';
 
-  // Закрыть по клику вне
   setTimeout(() => {
     document.addEventListener('click', function hide() {
-      const menuEl = document.getElementById('message-context-menu');
-      if (menuEl) menuEl.style.display = 'none';
+      if (menu) menu.style.display = 'none';
       document.removeEventListener('click', hide);
     }, { once: true });
   }, 10);
@@ -473,20 +444,15 @@ function contextForward() {
 }
 
 function contextCopy() {
-  if (contextMessage) {
-    navigator.clipboard.writeText(contextMessage.content);
-  }
+  if (contextMessage) navigator.clipboard.writeText(contextMessage.content);
 }
 
 function contextReact(emoji) {
-  if (contextMessage) {
-    addReaction(contextMessage.id, emoji);
-  }
+  if (contextMessage) addReaction(contextMessage.id, emoji);
 }
 
 async function contextDelete() {
-  if (!contextMessage) return;
-  if (!confirm('Удалить сообщение?')) return;
+  if (!contextMessage || !confirm('Удалить сообщение?')) return;
   try {
     await fetch(`/api/messages/${contextMessage.id}`, {
       method: 'DELETE',
@@ -499,11 +465,11 @@ async function contextDelete() {
   }
 }
 
-// ==================== SOCKET.IO ====================
+// Socket.IO
 function setupSocket() {
-  socket.on('connect', () => {
-    console.log('Socket connected');
-  });
+  socket = io({ auth: { token: localStorage.getItem('token') } });
+
+  socket.on('connect', () => console.log('Socket connected'));
 
   socket.on('newMessage', (msg) => {
     if (msg.chatId === currentChatId) {
@@ -511,7 +477,6 @@ function setupSocket() {
       renderMessageList();
       scrollToBottom();
     } else {
-      // Обновить список чатов (последнее сообщение)
       const chat = chats.find(c => c.id === msg.chatId);
       if (chat) {
         chat.lastMessage = msg.content;
@@ -522,29 +487,19 @@ function setupSocket() {
   });
 
   socket.on('userTyping', ({ username, isTyping }) => {
-    const statusEl = document.getElementById('chat-status');
-    if (statusEl) {
-      statusEl.textContent = isTyping ? `${username} печатает...` : 'онлайн';
-    }
+    const status = document.getElementById('chat-status');
+    if (status) status.textContent = isTyping ? `${username} печатает...` : 'онлайн';
   });
 
-  socket.on('messagesRead', ({ userId, messageIds }) => {
-    // Обновить статусы прочтения
-    // ...
-  });
+  socket.on('error', (err) => console.error('Socket error', err));
 
-  socket.on('error', (err) => {
-    console.error('Socket error', err);
-  });
-
-  // Правило 57: переподключение
   socket.on('disconnect', () => {
     console.log('Socket disconnected, attempting reconnect...');
     setTimeout(() => socket.connect(), 3000);
   });
 }
 
-// ==================== ГЛОБАЛЬНЫЙ ПОИСК ====================
+// Глобальный поиск
 async function globalSearch() {
   const query = document.getElementById('global-search').value;
   if (query.length < 2) {
@@ -557,31 +512,19 @@ async function globalSearch() {
     });
     if (!res.ok) throw new Error('Search failed');
     const data = await res.json();
-    // Отобразить результаты поиска (упрощённо – вставить в список)
     const listEl = document.getElementById('chat-list');
     listEl.innerHTML = '';
     data.users.forEach(user => {
       const item = document.createElement('div');
       item.className = 'contact-item';
-      item.innerHTML = `
-        <div class="chat-avatar">${user.avatar || '👤'}</div>
-        <div class="chat-info">
-          <div class="chat-name">${escapeHtml(user.username)}</div>
-        </div>
-      `;
+      item.innerHTML = `<div class="chat-avatar">${user.avatar || '👤'}</div><div class="chat-info"><div class="chat-name">${escapeHtml(user.username)}</div></div>`;
       item.addEventListener('click', () => showUserProfile(user.id));
       listEl.appendChild(item);
     });
     data.chats.forEach(chat => {
       const item = document.createElement('div');
       item.className = 'chat-item';
-      item.innerHTML = `
-        <div class="chat-avatar">${chat.avatar || '📢'}</div>
-        <div class="chat-info">
-          <div class="chat-name">${escapeHtml(chat.title)}</div>
-          <div class="chat-last-msg">${chat.description || ''}</div>
-        </div>
-      `;
+      item.innerHTML = `<div class="chat-avatar">${chat.avatar || '📢'}</div><div class="chat-info"><div class="chat-name">${escapeHtml(chat.title)}</div><div class="chat-last-msg">${chat.description || ''}</div></div>`;
       item.addEventListener('click', () => openChat(chat.id));
       listEl.appendChild(item);
     });
@@ -590,41 +533,15 @@ async function globalSearch() {
   }
 }
 
-// ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
-// Для вызова из HTML
-window.showSettings = function() {
-  alert('Настройки (заглушка)');
-};
-
-window.showUserProfile = function(userId) {
-  alert('Профиль пользователя ' + userId);
-};
-
-window.showChatMenu = function(chatId) {
-  alert('Меню чата ' + chatId);
-};
-
-window.openChatInfo = function(chatId) {
-  alert('Информация о чате ' + chatId);
-};
-
-window.toggleSelectChat = function(chatId, e) {
+// Глобальные функции для вызова из HTML
+window.showSettings = () => alert('Настройки (заглушка)');
+window.showUserProfile = (userId) => alert('Профиль пользователя ' + userId);
+window.showChatMenu = (chatId) => alert('Меню чата ' + chatId);
+window.openChatInfo = (chatId) => alert('Информация о чате ' + chatId);
+window.toggleSelectChat = (chatId, e) => {
   e.stopPropagation();
   const idx = selectedItems.indexOf(chatId);
   if (idx === -1) selectedItems.push(chatId);
   else selectedItems.splice(idx, 1);
   renderChatList();
 };
-
-window.contextReply = contextReply;
-window.contextForward = contextForward;
-window.contextCopy = contextCopy;
-window.contextReact = contextReact;
-window.contextDelete = contextDelete;
-window.addEmoji = addEmoji;
-window.sendMessage = sendMessage;
-window.uploadFile = uploadFile;
-window.handleTyping = handleTyping;
-window.toggleEmojiPicker = toggleEmojiPicker;
-window.globalSearch = globalSearch;
-window.closeChat = closeChat;
