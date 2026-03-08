@@ -1,4 +1,4 @@
-// chats.js — управление чатами (личные, группы, каналы)
+// chats.js – chat management (private, group, channel)
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
@@ -6,7 +6,7 @@ const { db } = require('./database');
 const { generateId } = require('./utils');
 const logger = require('./logger');
 
-// Получить все чаты пользователя
+// Get all chats for current user
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -30,17 +30,16 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     logger.error('Get chats error:', err);
-    res.status(500).json({ error: 'Ошибка получения чатов' });
+    res.status(500).json({ error: 'Failed to get chats' });
   }
 });
 
-// Создать личный чат
+// Create private chat
 router.post('/private', authenticateToken, async (req, res) => {
   try {
     const { userId: otherUserId } = req.body;
     const myId = req.user.id;
 
-    // Проверяем существующий чат
     const existing = await db.query(
       `SELECT c.id FROM chats c
        JOIN chat_participants cp1 ON c.id = cp1.chat_id
@@ -61,11 +60,11 @@ router.post('/private', authenticateToken, async (req, res) => {
     res.json({ chatId });
   } catch (err) {
     logger.error('Create private chat error:', err);
-    res.status(500).json({ error: 'Ошибка создания чата' });
+    res.status(500).json({ error: 'Failed to create chat' });
   }
 });
 
-// Создать группу
+// Create group
 router.post('/group', authenticateToken, async (req, res) => {
   try {
     const { title, avatar, description, privacy, participants } = req.body;
@@ -95,11 +94,11 @@ router.post('/group', authenticateToken, async (req, res) => {
     res.json({ chatId });
   } catch (err) {
     logger.error('Create group error:', err);
-    res.status(500).json({ error: 'Ошибка создания группы' });
+    res.status(500).json({ error: 'Failed to create group' });
   }
 });
 
-// Создать канал
+// Create channel
 router.post('/channel', authenticateToken, async (req, res) => {
   try {
     const { title, avatar, description, privacy } = req.body;
@@ -125,11 +124,11 @@ router.post('/channel', authenticateToken, async (req, res) => {
     res.json({ chatId });
   } catch (err) {
     logger.error('Create channel error:', err);
-    res.status(500).json({ error: 'Ошибка создания канала' });
+    res.status(500).json({ error: 'Failed to create channel' });
   }
 });
 
-// Получить информацию о чате
+// Get chat info
 router.get('/:chatId', authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -144,28 +143,27 @@ router.get('/:chatId', authenticateToken, async (req, res) => {
       [chatId]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Чат не найден' });
+      return res.status(404).json({ error: 'Chat not found' });
     }
     res.json(result.rows[0]);
   } catch (err) {
     logger.error('Get chat info error:', err);
-    res.status(500).json({ error: 'Ошибка получения информации о чате' });
+    res.status(500).json({ error: 'Failed to get chat info' });
   }
 });
 
-// Обновить информацию о чате (только владелец/админ)
+// Update chat (only owner/admin)
 router.put('/:chatId', authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params;
     const { title, avatar, description, privacy } = req.body;
 
-    // Проверка прав
     const roleCheck = await db.query(
       'SELECT role FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
       [chatId, req.user.id]
     );
     if (roleCheck.rows.length === 0 || !['owner', 'admin'].includes(roleCheck.rows[0].role)) {
-      return res.status(403).json({ error: 'Недостаточно прав' });
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     await db.query(
@@ -181,11 +179,11 @@ router.put('/:chatId', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Update chat error:', err);
-    res.status(500).json({ error: 'Ошибка обновления чата' });
+    res.status(500).json({ error: 'Failed to update chat' });
   }
 });
 
-// Добавить участника
+// Add participant
 router.post('/:chatId/participants', authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -196,7 +194,7 @@ router.post('/:chatId/participants', authenticateToken, async (req, res) => {
       [chatId, req.user.id]
     );
     if (roleCheck.rows.length === 0 || !['owner', 'admin'].includes(roleCheck.rows[0].role)) {
-      return res.status(403).json({ error: 'Недостаточно прав' });
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     await db.query(
@@ -206,17 +204,16 @@ router.post('/:chatId/participants', authenticateToken, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Add participant error:', err);
-    res.status(500).json({ error: 'Ошибка добавления участника' });
+    res.status(500).json({ error: 'Failed to add participant' });
   }
 });
 
-// Удалить участника
+// Remove participant
 router.delete('/:chatId/participants/:userId', authenticateToken, async (req, res) => {
   try {
     const { chatId, userId } = req.params;
     const myId = req.user.id;
     if (myId === userId) {
-      // Выход из чата
       await db.query('DELETE FROM chat_participants WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
     } else {
       const roleCheck = await db.query(
@@ -224,14 +221,14 @@ router.delete('/:chatId/participants/:userId', authenticateToken, async (req, re
         [chatId, myId]
       );
       if (roleCheck.rows.length === 0 || !['owner', 'admin'].includes(roleCheck.rows[0].role)) {
-        return res.status(403).json({ error: 'Недостаточно прав' });
+        return res.status(403).json({ error: 'Insufficient permissions' });
       }
       await db.query('DELETE FROM chat_participants WHERE chat_id = $1 AND user_id = $2', [chatId, userId]);
     }
     res.json({ success: true });
   } catch (err) {
     logger.error('Remove participant error:', err);
-    res.status(500).json({ error: 'Ошибка удаления участника' });
+    res.status(500).json({ error: 'Failed to remove participant' });
   }
 });
 
