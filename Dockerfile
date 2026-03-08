@@ -1,16 +1,19 @@
-FROM node:20-alpine
-
-RUN apk add --no-cache ffmpeg
+FROM node:18-alpine
 
 WORKDIR /app
 
+# Установка зависимостей
 COPY package*.json ./
 RUN npm ci --only=production
 
+# Копирование исходников
 COPY . .
 
-EXPOSE 3000 3001 3002 3003
+# Сборка (если нужна)
+# RUN npm run build
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 CMD node healthcheck.js
+# Открытие порта
+EXPOSE 3000
 
+# Запуск
 CMD ["npm", "start"]
