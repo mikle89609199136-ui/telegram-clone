@@ -1,434 +1,630 @@
-let socket, currentUser, currentChatId, token = localStorage.getItem('token'), refreshToken = localStorage.getItem('refreshToken');
-const apiBase = '/';
+// app.js — клиентская логика SPA
 
-async function apiRequest(endpoint, options = {}) {
-  options.headers = options.headers || {};
-  if (token) options.headers['Authorization'] = `Bearer ${token}`;
-  options.headers['Content-Type'] = 'application/json';
-  let res = await fetch(apiBase + endpoint, options);
-  if (res.status === 401) {
-    const ok = await refreshAccessToken();
-    if (ok) {
-      options.headers['Authorization'] = `Bearer ${token}`;
-      res = await fetch(apiBase + endpoint, options);
-    } else {
-      logout();
-      showPage('login-page');
-      throw new Error('Unauthorized');
-    }
+// ==================== ИНИЦИАЛИЗАЦИЯ ====================
+const socket = io({
+  auth: { token: localStorage.getItem('token') },
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
+});
+
+let currentUser = null;
+let currentChatId = null;
+let chats = [];
+let messages = [];
+let contacts = [];
+let folders = [];
+let editMode = false;
+let selectedItems = [];
+let contextMessage = null;
+
+// DOM элементы
+let appEl;
+
+document.addEventListener('DOMContentLoaded', async () => {
+  appEl = document.getElementById('app');
+  const token = localStorage.getItem('token');
+
+  if (!token && window.location.pathname !== '/') {
+    window.location.href = '/';
+    return;
   }
-  return res.json();
-}
 
-async function refreshAccessToken() {
-  if (!refreshToken) return false;
-  const res = await fetch('/auth/refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken })
-  });
-  if (res.ok) {
-    const data = await res.json();
-    token = data.accessToken;
-    refreshToken = data.refreshToken;
-    localStorage.setItem('token', token);
-    localStorage.setItem('refreshToken', refreshToken);
-    return true;
+  if (token) {
+    try {
+      await loadUser();
+      await loadChats();
+      await loadContacts();
+      await loadFolders();
+      renderMainLayout();
+      setupSocket();
+    } catch (err) {
+      console.error('Failed to initialize app', err);
+      localStorage.removeItem('token');
+      window.location.href = '/';
+    }
+  } else {
+    // Показываем страницу входа/регистрации (она загружается отдельно)
+    // В chat.html она не нужна, так как это основное приложение.
+    // Страница входа будет в корне (index.html), но по условию задачи у нас только chat.html.
+    // Для простоты сделаем редирект на корень, где index.html содержит формы.
+    window.location.href = '/';
   }
-  return false;
-}
+});
 
-function logout() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('refreshToken');
-  token = refreshToken = null;
-  currentUser = null;
-  if (socket) socket.disconnect();
-  showPage('login-page');
-}
-
-function showPage(pageId) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.getElementById(pageId).classList.add('active');
-}
-
-function renderLoginPage() {
-  return `
-    <div class="auth-container">
-      <h2>Login to Craheapp</h2>
-      <form id="login-form">
-        <input type="email" id="login-email" placeholder="Email" required>
-        <input type="password" id="login-password" placeholder="Password" required>
-        <button type="submit">Login</button>
-      </form>
-      <p>No account? <a href="#" onclick="showPage('register-page')">Register</a></p>
-    </div>
-  `;
-}
-
-function renderRegisterPage() {
-  return `
-    <div class="auth-container">
-      <h2>Create Craheapp Account</h2>
-      <form id="register-form">
-        <input type="text" id="register-username" placeholder="Username" required>
-        <input type="email" id="register-email" placeholder="Email" required>
-        <input type="password" id="register-password" placeholder="Password" required>
-        <input type="password" id="register-confirm" placeholder="Confirm password" required>
-        <button type="submit">Create account</button>
-      </form>
-      <p>Already have an account? <a href="#" onclick="showPage('login-page')">Login</a></p>
-    </div>
-  `;
-}
-
-function renderMainPage() {
-  return `
-    <div class="messenger-container">
-      <div class="sidebar">
-        <div class="sidebar-header">
-          <div class="menu-button" onclick="toggleSideMenu()">☰</div>
-          <div class="app-title">Craheapp</div>
-          <div class="search-button" onclick="toggleSearch()">🔍</div>
-          <div class="new-chat-button" onclick="openNewChat()">✚</div>
-        </div>
-        <div id="search-bar" class="search-box hidden">
-          <input type="text" id="search-input" placeholder="Search users, chats, messages...">
-        </div>
-        <div class="chat-filters">
-          <div class="filter-tab active" data-filter="all">All</div>
-          <div class="filter-tab" data-filter="unread">Unread</div>
-          <div class="filter-tab" data-filter="groups">Groups</div>
-          <div class="filter-tab" data-filter="channels">Channels</div>
-        </div>
-        <div class="chats-list" id="chats-list"></div>
-        <div class="ai-button" onclick="openAiChat()">🤖 AI Assistant</div>
-      </div>
-      <div class="chat-area" id="chat-area">
-        <div class="chat-header" id="chat-header">
-          <div class="chat-header-avatar" onclick="openProfile()">
-            <img id="chat-avatar" src="" alt="">
-          </div>
-          <div class="chat-header-info">
-            <div class="chat-header-name" id="chat-title"></div>
-            <div class="chat-header-status" id="chat-status"></div>
-          </div>
-          <div class="chat-header-actions">
-            <div class="icon-button" onclick="startVoiceCall()">📞</div>
-            <div class="icon-button" onclick="startVideoCall()">📹</div>
-            <div class="icon-button" onclick="openChatMenu()">⋯</div>
-          </div>
-        </div>
-        <div class="messages-area" id="messages-area"></div>
-        <div class="message-input-area">
-          <div class="emoji-button" onclick="toggleEmoji()">😊</div>
-          <div class="attach-button" onclick="document.getElementById('file-input').click()">📎</div>
-          <input type="file" id="file-input" style="display: none" multiple>
-          <input type="text" id="message-text" class="message-input" placeholder="Write a message...">
-          <div class="voice-button" onclick="startVoiceRecording()">🎤</div>
-          <div class="send-button" onclick="sendMessage()">➤</div>
-        </div>
-      </div>
-      <div class="right-panel" id="right-panel"></div>
-    </div>
-  `;
-}
-
-function attachAuthListeners() {
-  document.getElementById('login-form')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-    const res = await apiRequest('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-    if (res.accessToken) {
-      token = res.accessToken;
-      refreshToken = res.refreshToken;
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      currentUser = res.user;
-      initSocket();
-      showPage('main-page');
-      loadChats();
-    } else {
-      alert(res.error || 'Login failed');
-    }
+// ==================== ЗАГРУЗКА ДАННЫХ ====================
+async function loadUser() {
+  const res = await fetch('/api/users/me', {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
   });
-
-  document.getElementById('register-form')?.addEventListener('submit', async e => {
-    e.preventDefault();
-    const username = document.getElementById('register-username').value;
-    const email = document.getElementById('register-email').value;
-    const password = document.getElementById('register-password').value;
-    const confirm = document.getElementById('register-confirm').value;
-    if (password !== confirm) return alert('Passwords do not match');
-    const res = await apiRequest('/auth/register', { method: 'POST', body: JSON.stringify({ username, email, password }) });
-    if (res.accessToken) {
-      token = res.accessToken;
-      refreshToken = res.refreshToken;
-      localStorage.setItem('token', token);
-      localStorage.setItem('refreshToken', refreshToken);
-      currentUser = res.user;
-      initSocket();
-      showPage('main-page');
-      loadChats();
-    } else {
-      alert(res.error || 'Registration failed');
-    }
-  });
-}
-
-function initSocket() {
-  socket = io({ auth: { token } });
-  socket.on('connect', () => console.log('Socket connected'));
-  socket.on('newMessage', msg => {
-    if (currentChatId === msg.chat_id) {
-      appendMessage(msg);
-    } else {
-      loadChats();
-    }
-  });
-  socket.on('typing', data => {
-    if (data.chatId === currentChatId) {
-      document.getElementById('chat-status').innerText = 'typing...';
-    }
-  });
-  socket.on('stopTyping', data => {
-    if (data.chatId === currentChatId) {
-      document.getElementById('chat-status').innerText = 'online';
-    }
-  });
-  socket.on('messagesRead', data => {
-    // update read status in UI
-  });
-  socket.on('ai_response', data => {
-    if (currentChatId === 'ai') {
-      appendAiMessage(data.reply);
-    }
-  });
-  socket.on('userOnline', userId => { /* update contact list */ });
-  socket.on('userOffline', userId => { /* update contact list */ });
+  if (!res.ok) throw new Error('Failed to load user');
+  currentUser = await res.json();
+  applyTheme(currentUser.theme, currentUser.wallpaper);
 }
 
 async function loadChats() {
-  const chats = await apiRequest('/chats');
-  const list = document.getElementById('chats-list');
-  if (!list) return;
-  list.innerHTML = chats.map(c => {
-    let title = c.title;
-    let avatar = c.avatar || '/default-avatar.png';
-    if (c.type === 'private' && c.participants) {
-      const other = c.participants.find(p => p.id !== currentUser.id);
-      if (other) {
-        title = other.username;
-        avatar = other.avatar || '/default-avatar.png';
-      }
-    }
-    const lastMsg = c.last_message ? (c.last_message.text || 'Media') : '';
-    const time = c.last_message ? new Date(c.last_message.created_at).toLocaleTimeString() : '';
-    const unread = ''; // TODO: fetch unread count
-    return `
-      <div class="chat-item ${c.id === currentChatId ? 'active' : ''}" data-chat-id="${c.id}" onclick="openChat(${c.id})">
-        <img src="${avatar}" class="chat-avatar">
-        <div class="chat-info">
-          <div class="chat-name">${title} ${c.pinned ? '📌' : ''}</div>
-          <div class="chat-last-message">${lastMsg}</div>
-        </div>
-        <div class="chat-meta">
-          <span class="chat-time">${time}</span>
-          ${unread ? `<span class="unread-badge">${unread}</span>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+  const res = await fetch('/api/chats', {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  });
+  if (!res.ok) throw new Error('Failed to load chats');
+  chats = await res.json();
 }
 
+async function loadContacts() {
+  const res = await fetch('/api/contacts', {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  });
+  if (!res.ok) throw new Error('Failed to load contacts');
+  contacts = await res.json();
+}
+
+async function loadFolders() {
+  const res = await fetch('/api/folders', {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  });
+  if (!res.ok) throw new Error('Failed to load folders');
+  folders = await res.json();
+}
+
+// ==================== РЕНДЕР ====================
+function renderMainLayout() {
+  // Определяем, десктоп или мобила
+  const isDesktop = window.innerWidth >= 768;
+  appEl.className = isDesktop ? 'desktop-layout' : '';
+
+  appEl.innerHTML = `
+    <div class="sidebar">
+      <div class="top-bar">
+        <h1>${currentUser?.username || 'Чаты'}</h1>
+        <button class="btn-icon" onclick="showSettings()">⚙️</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="global-search" placeholder="Поиск..." oninput="globalSearch()">
+      </div>
+      <div class="chats-list" id="chat-list"></div>
+    </div>
+    <div class="main-content" id="main-content">
+      <div class="chat-placeholder" id="chat-placeholder" style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary);">
+        Выберите чат
+      </div>
+    </div>
+  `;
+
+  renderChatList();
+
+  // Если есть текущий чат (например, после перезагрузки), открываем его
+  if (currentChatId) {
+    openChat(currentChatId);
+  }
+}
+
+function renderChatList() {
+  const listEl = document.getElementById('chat-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  // Сортировка: закреплённые сверху, потом по дате последнего сообщения
+  const sorted = [...chats].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return (b.lastMessageTime || 0) - (a.lastMessageTime || 0);
+  });
+
+  sorted.forEach(chat => {
+    const item = document.createElement('div');
+    item.className = `chat-item ${chat.pinned ? 'pinned' : ''} ${editMode ? 'edit-mode' : ''}`;
+    item.dataset.id = chat.id;
+
+    if (editMode) {
+      const checkbox = document.createElement('div');
+      checkbox.className = `chat-checkbox ${selectedItems.includes(chat.id) ? 'selected' : ''}`;
+      checkbox.textContent = selectedItems.includes(chat.id) ? '✓' : '';
+      item.appendChild(checkbox);
+    }
+
+    item.innerHTML += `
+      <div class="chat-avatar">${chat.avatar || '👤'}</div>
+      <div class="chat-info">
+        <div class="chat-name">${escapeHtml(chat.title || 'Без названия')}</div>
+        <div class="chat-last-msg">${escapeHtml(chat.lastMessage || '')}</div>
+      </div>
+      <div class="chat-meta">
+        <div class="chat-time">${formatTime(chat.lastMessageTime)}</div>
+        ${chat.unreadCount ? `<div class="chat-unread">${chat.unreadCount}</div>` : ''}
+        ${chat.pinned ? '<span class="chat-pin">📌</span>' : ''}
+      </div>
+    `;
+
+    item.addEventListener('click', (e) => {
+      if (editMode) {
+        toggleSelectChat(chat.id, e);
+      } else {
+        openChat(chat.id);
+      }
+    });
+
+    listEl.appendChild(item);
+  });
+}
+
+function renderMessages() {
+  const content = document.getElementById('main-content');
+  if (!content) return;
+
+  const chat = chats.find(c => c.id === currentChatId);
+  if (!chat) return;
+
+  content.innerHTML = `
+    <div class="chat-window">
+      <div class="chat-header" onclick="openChatInfo('${chat.id}')">
+        <button class="back-btn" onclick="event.stopPropagation(); closeChat()">←</button>
+        <div class="chat-header-info">
+          <div class="chat-header-name">${escapeHtml(chat.title || '')}</div>
+          <div class="chat-header-status" id="chat-status">онлайн</div>
+        </div>
+        <button class="btn-icon" onclick="event.stopPropagation(); showChatMenu('${chat.id}')">⋮</button>
+      </div>
+      <div class="messages-area" id="messages-area"></div>
+      <div class="input-area">
+        <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
+        <div class="input-wrapper">
+          <input type="text" id="message-input" placeholder="Сообщение" oninput="handleTyping()">
+          <button class="emoji-btn" onclick="toggleEmojiPicker()">😀</button>
+          <button class="voice-btn" id="send-btn" onclick="sendMessage()">🎤</button>
+        </div>
+      </div>
+      <input type="file" id="file-input" onchange="uploadFile()" style="display: none;">
+      <div id="emoji-picker" class="emoji-picker" style="display: none;"></div>
+    </div>
+  `;
+
+  renderMessageList();
+  initEmojiPicker();
+  scrollToBottom();
+}
+
+function renderMessageList() {
+  const area = document.getElementById('messages-area');
+  if (!area) return;
+  area.innerHTML = '';
+
+  const msgs = messages.filter(m => m.chatId === currentChatId);
+  msgs.sort((a, b) => a.createdAt - b.createdAt);
+
+  msgs.forEach(msg => {
+    const isOwn = msg.senderId === currentUser.id;
+    const sender = isOwn ? currentUser : contacts.find(c => c.id === msg.senderId) || { username: 'Unknown', avatar: '👤' };
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${isOwn ? 'own' : 'other'}`;
+    msgDiv.dataset.id = msg.id;
+
+    let headerHtml = '';
+    if (!isOwn && chat.type !== 'private') {
+      headerHtml = `
+        <div class="message-header" onclick="showUserProfile('${msg.senderId}')">
+          <div class="message-sender-avatar">${sender.avatar}</div>
+          <span class="message-sender-name">${escapeHtml(sender.username)}</span>
+        </div>
+      `;
+    }
+
+    let contentHtml = '';
+    if (msg.type === 'text') {
+      contentHtml = escapeHtml(msg.content);
+    } else if (msg.type === 'file') {
+      contentHtml = `<div class="file-message"><span class="file-icon">📎</span><span>${escapeHtml(msg.fileName)}</span></div>`;
+    } else if (msg.type === 'photo') {
+      contentHtml = `<img src="${msg.fileUrl}" style="max-width:200px; max-height:200px; border-radius:8px;">`;
+    } else if (msg.type === 'video') {
+      contentHtml = `<video src="${msg.fileUrl}" controls style="max-width:200px; max-height:200px; border-radius:8px;"></video>`;
+    } else if (msg.type === 'voice') {
+      contentHtml = `<audio src="${msg.fileUrl}" controls></audio>`;
+    }
+
+    let reactionsHtml = '';
+    if (msg.reactions && msg.reactions.length) {
+      reactionsHtml = '<div class="message-reactions">' + msg.reactions.map(r => `<span class="reaction" onclick="addReaction('${msg.id}', '${r}')">${r}</span>`).join('') + '</div>';
+    }
+
+    msgDiv.innerHTML = `
+      ${headerHtml}
+      <div class="message-bubble">${contentHtml}</div>
+      <div class="message-time">${formatTime(msg.createdAt)}</div>
+      ${reactionsHtml}
+    `;
+
+    msgDiv.addEventListener('contextmenu', (e) => showMessageContextMenu(e, msg));
+    area.appendChild(msgDiv);
+  });
+}
+
+function initEmojiPicker() {
+  const picker = document.getElementById('emoji-picker');
+  if (!picker) return;
+  const emojis = ['😊','😂','❤️','👍','🔥','😢','😡','🎉','👏','💯','🤔','🙏','😁','😎','🤣','🥰','😘','🤗','😐','😴','🤯','🥳','🤩','😱','🤬','👻','💀','👽'];
+  picker.innerHTML = emojis.map(e => `<span class="emoji-item" onclick="addEmoji('${e}')">${e}</span>`).join('');
+}
+
+function scrollToBottom() {
+  const area = document.getElementById('messages-area');
+  if (area) area.scrollTop = area.scrollHeight;
+}
+
+// ==================== API ВЗАИМОДЕЙСТВИЯ ====================
 async function openChat(chatId) {
   currentChatId = chatId;
-  document.querySelectorAll('.chat-item').forEach(item => item.classList.remove('active'));
-  document.querySelector(`.chat-item[data-chat-id="${chatId}"]`)?.classList.add('active');
-
-  const chatInfo = await apiRequest(`/chats/${chatId}`);
-  document.getElementById('chat-title').innerText = chatInfo.title || 'Chat';
-  document.getElementById('chat-avatar').src = chatInfo.avatar || '/default-avatar.png';
-  document.getElementById('chat-status').innerText = '';
-
-  const messages = await apiRequest(`/messages/chat/${chatId}?limit=50`);
-  renderMessages(messages);
-  socket.emit('joinChat', chatId);
+  try {
+    const res = await fetch(`/api/messages/${chatId}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    if (!res.ok) throw new Error('Failed to load messages');
+    messages = await res.json();
+    renderMessages();
+    socket.emit('joinChat', chatId);
+  } catch (err) {
+    console.error(err);
+  }
 }
 
-function renderMessages(msgs) {
-  const area = document.getElementById('messages-area');
-  area.innerHTML = msgs.map(m => {
-    const isOutgoing = m.sender && m.sender.id === currentUser.id;
-    return `
-      <div class="message ${isOutgoing ? 'outgoing' : 'incoming'}" data-message-id="${m.id}">
-        <div class="message-bubble">
-          ${m.type === 'text' ? `<p class="message-text">${escapeHtml(m.text)}</p>` : ''}
-          ${m.media ? renderMedia(m.media) : ''}
-          ${m.reply_to ? `<div class="reply-preview">↩️ ${escapeHtml(m.reply_to.content)}</div>` : ''}
-          <span class="message-time">${new Date(m.created_at).toLocaleTimeString()}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-  area.scrollTop = area.scrollHeight;
+function closeChat() {
+  currentChatId = null;
+  renderMainLayout(); // возвращаемся к списку
+}
+
+async function sendMessage() {
+  const input = document.getElementById('message-input');
+  const content = input.value.trim();
+  if (!content || !currentChatId) return;
+
+  try {
+    const res = await fetch(`/api/messages/${currentChatId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ content, type: 'text' })
+    });
+    if (!res.ok) throw new Error('Failed to send message');
+    const newMsg = await res.json();
+    messages.push(newMsg);
+    renderMessageList();
+    input.value = '';
+    document.getElementById('send-btn').className = 'voice-btn';
+    document.getElementById('send-btn').textContent = '🎤';
+    scrollToBottom();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function uploadFile() {
+  const fileInput = document.getElementById('file-input');
+  const file = fileInput.files[0];
+  if (!file || !currentChatId) return;
+
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch(`/api/upload/chat/${currentChatId}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      body: formData
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    const newMsg = await res.json();
+    messages.push(newMsg);
+    renderMessageList();
+    fileInput.value = '';
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function addReaction(messageId, reaction) {
+  try {
+    await fetch(`/api/messages/${messageId}/reactions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ reaction })
+    });
+    // Обновим сообщение локально
+    const msg = messages.find(m => m.id === messageId);
+    if (msg) {
+      if (!msg.reactions) msg.reactions = [];
+      if (!msg.reactions.includes(reaction)) msg.reactions.push(reaction);
+      renderMessageList();
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ==================== УТИЛИТЫ ====================
+function formatTime(timestamp) {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  return d.toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
 }
 
 function escapeHtml(unsafe) {
-  return unsafe.replace(/[&<>"]/g, m => {
+  if (!unsafe) return '';
+  return unsafe.replace(/[&<>"']/g, function(m) {
     if (m === '&') return '&amp;';
     if (m === '<') return '&lt;';
     if (m === '>') return '&gt;';
     if (m === '"') return '&quot;';
-    return m;
+    return '&#039;';
   });
 }
 
-function renderMedia(media) {
-  if (Array.isArray(media)) media = media[0];
-  if (!media) return '';
-  const url = media.url;
-  if (url.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
-    return `<img src="${url}" class="media-image" onclick="openMediaViewer('${url}')">`;
-  } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
-    return `<video src="${url}" controls class="media-video"></video>`;
-  } else if (url.match(/\.(mp3|wav|m4a)$/i)) {
-    return `<audio src="${url}" controls class="media-audio"></audio>`;
-  } else {
-    return `<a href="${url}" target="_blank" class="media-file">📎 ${media.filename || 'File'}</a>`;
+function applyTheme(theme, wallpaper) {
+  document.body.className = '';
+  if (theme) document.body.classList.add(theme + '-theme');
+  if (wallpaper) document.body.classList.add('wallpaper-' + wallpaper);
+}
+
+function handleTyping() {
+  const input = document.getElementById('message-input');
+  const btn = document.getElementById('send-btn');
+  if (input && btn) {
+    if (input.value.trim()) {
+      btn.className = 'voice-btn send-btn';
+      btn.textContent = '➤';
+      socket.emit('typing', { chatId: currentChatId, isTyping: true });
+    } else {
+      btn.className = 'voice-btn';
+      btn.textContent = '🎤';
+      socket.emit('typing', { chatId: currentChatId, isTyping: false });
+    }
   }
 }
 
-function appendMessage(m) {
-  const area = document.getElementById('messages-area');
-  const div = document.createElement('div');
-  div.className = `message ${m.sender && m.sender.id === currentUser.id ? 'outgoing' : 'incoming'}`;
-  div.dataset.messageId = m.id;
-  div.innerHTML = `
-    <div class="message-bubble">
-      ${m.type === 'text' ? `<p class="message-text">${escapeHtml(m.text)}</p>` : ''}
-      ${m.media ? renderMedia(m.media) : ''}
-      ${m.reply_to ? `<div class="reply-preview">↩️ ${escapeHtml(m.reply_to.content)}</div>` : ''}
-      <span class="message-time">${new Date(m.created_at).toLocaleTimeString()}</span>
-    </div>
-  `;
-  area.appendChild(div);
-  area.scrollTop = area.scrollHeight;
+function toggleEmojiPicker() {
+  const picker = document.getElementById('emoji-picker');
+  if (picker) picker.style.display = picker.style.display === 'none' ? 'grid' : 'none';
 }
 
-async function sendMessage() {
-  const input = document.getElementById('message-text');
-  const text = input.value.trim();
-  const fileInput = document.getElementById('file-input');
-  const files = fileInput.files;
+function addEmoji(emoji) {
+  const input = document.getElementById('message-input');
+  if (input) {
+    input.value += emoji;
+    input.focus();
+    handleTyping();
+  }
+  toggleEmojiPicker();
+}
 
-  let media = [];
-  if (files.length) {
-    for (let file of files) {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/upload', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: fd
-      }).then(r => r.json());
-      if (res.url) {
-        media.push({ url: res.url, type: file.type, filename: file.name });
+// ==================== КОНТЕКСТНОЕ МЕНЮ ====================
+function showMessageContextMenu(e, msg) {
+  e.preventDefault();
+  contextMessage = msg;
+  const menu = document.getElementById('message-context-menu');
+  if (!menu) {
+    // Создаём меню, если его нет
+    const newMenu = document.createElement('div');
+    newMenu.id = 'message-context-menu';
+    newMenu.className = 'message-context-menu';
+    newMenu.innerHTML = `
+      <div class="message-context-item" onclick="contextReply()">↩️ Ответить</div>
+      <div class="message-context-item" onclick="contextForward()">➡️ Переслать</div>
+      <div class="message-context-item" onclick="contextCopy()">📋 Копировать</div>
+      <div class="message-context-item" onclick="contextReact('👍')">👍 Поставить реакцию</div>
+      <div class="message-context-item" onclick="contextReact('❤️')">❤️ Поставить реакцию</div>
+      <div class="message-context-item" onclick="contextReact('😮')">😮 Поставить реакцию</div>
+      <div class="message-context-item" onclick="contextReact('😢')">😢 Поставить реакцию</div>
+      <div class="message-context-item" onclick="contextReact('😡')">😡 Поставить реакцию</div>
+      <div class="message-context-item" onclick="contextDelete()">❌ Удалить</div>
+    `;
+    document.body.appendChild(newMenu);
+    document.getElementById('message-context-menu').style.display = 'block';
+    document.getElementById('message-context-menu').style.left = e.pageX + 'px';
+    document.getElementById('message-context-menu').style.top = e.pageY + 'px';
+  } else {
+    menu.style.display = 'block';
+    menu.style.left = e.pageX + 'px';
+    menu.style.top = e.pageY + 'px';
+  }
+
+  // Закрыть по клику вне
+  setTimeout(() => {
+    document.addEventListener('click', function hide() {
+      const menuEl = document.getElementById('message-context-menu');
+      if (menuEl) menuEl.style.display = 'none';
+      document.removeEventListener('click', hide);
+    }, { once: true });
+  }, 10);
+}
+
+function contextReply() {
+  if (contextMessage) {
+    const input = document.getElementById('message-input');
+    input.value = `@${contextMessage.senderUsername} ` + input.value;
+    input.focus();
+  }
+}
+
+function contextForward() {
+  alert('Функция пересылки будет позже');
+}
+
+function contextCopy() {
+  if (contextMessage) {
+    navigator.clipboard.writeText(contextMessage.content);
+  }
+}
+
+function contextReact(emoji) {
+  if (contextMessage) {
+    addReaction(contextMessage.id, emoji);
+  }
+}
+
+async function contextDelete() {
+  if (!contextMessage) return;
+  if (!confirm('Удалить сообщение?')) return;
+  try {
+    await fetch(`/api/messages/${contextMessage.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    messages = messages.filter(m => m.id !== contextMessage.id);
+    renderMessageList();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ==================== SOCKET.IO ====================
+function setupSocket() {
+  socket.on('connect', () => {
+    console.log('Socket connected');
+  });
+
+  socket.on('newMessage', (msg) => {
+    if (msg.chatId === currentChatId) {
+      messages.push(msg);
+      renderMessageList();
+      scrollToBottom();
+    } else {
+      // Обновить список чатов (последнее сообщение)
+      const chat = chats.find(c => c.id === msg.chatId);
+      if (chat) {
+        chat.lastMessage = msg.content;
+        chat.lastMessageTime = msg.createdAt;
+        renderChatList();
       }
     }
-    fileInput.value = '';
-  }
-
-  if (!text && !media.length) return;
-
-  socket.emit('sendMessage', {
-    chatId: currentChatId,
-    text,
-    type: media.length ? (media[0].type.startsWith('image') ? 'image' : media[0].type.startsWith('video') ? 'video' : 'file') : 'text',
-    media
   });
 
-  input.value = '';
+  socket.on('userTyping', ({ username, isTyping }) => {
+    const statusEl = document.getElementById('chat-status');
+    if (statusEl) {
+      statusEl.textContent = isTyping ? `${username} печатает...` : 'онлайн';
+    }
+  });
+
+  socket.on('messagesRead', ({ userId, messageIds }) => {
+    // Обновить статусы прочтения
+    // ...
+  });
+
+  socket.on('error', (err) => {
+    console.error('Socket error', err);
+  });
+
+  // Правило 57: переподключение
+  socket.on('disconnect', () => {
+    console.log('Socket disconnected, attempting reconnect...');
+    setTimeout(() => socket.connect(), 3000);
+  });
 }
 
-function openAiChat() {
-  currentChatId = 'ai';
-  document.getElementById('chat-title').innerText = 'AI Assistant';
-  document.getElementById('chat-avatar').src = '/ai-avatar.png';
-  document.getElementById('chat-status').innerText = 'online';
-  document.getElementById('messages-area').innerHTML = '<div class="message incoming"><div class="message-bubble">Hello! I am your AI assistant. Ask me anything.</div></div>';
-  document.querySelector('.send-button').onclick = sendAiMessage;
-}
-
-async function sendAiMessage() {
-  const input = document.getElementById('message-text');
-  const text = input.value.trim();
-  if (!text) return;
-  appendMessage({ sender: { id: currentUser.id }, text, type: 'text', created_at: new Date() });
-  input.value = '';
-  await apiRequest('/ai/message', { method: 'POST', body: JSON.stringify({ message: text }) });
-}
-
-function appendAiMessage(reply) {
-  const area = document.getElementById('messages-area');
-  const div = document.createElement('div');
-  div.className = 'message incoming';
-  div.innerHTML = `<div class="message-bubble">${reply}</div>`;
-  area.appendChild(div);
-  area.scrollTop = area.scrollHeight;
-}
-
-function toggleSearch() {
-  const bar = document.getElementById('search-bar');
-  bar.classList.toggle('hidden');
-}
-
-function openNewChat() {
-  // open modal to create chat
-}
-
-function openProfile() {
-  // show profile panel
-}
-
-function startVoiceCall() {
-  // initiate WebRTC call
-}
-
-function startVideoCall() {
-  // initiate video call
-}
-
-function toggleEmoji() {
-  // open emoji picker
-}
-
-function startVoiceRecording() {
-  // voice message recording
-}
-
-const app = document.getElementById('app');
-function render() {
-  if (token) {
-    apiRequest('/users/me').then(user => {
-      currentUser = user;
-      app.innerHTML = `
-        <div id="login-page" class="page">${renderLoginPage()}</div>
-        <div id="register-page" class="page">${renderRegisterPage()}</div>
-        <div id="main-page" class="page active">${renderMainPage()}</div>
+// ==================== ГЛОБАЛЬНЫЙ ПОИСК ====================
+async function globalSearch() {
+  const query = document.getElementById('global-search').value;
+  if (query.length < 2) {
+    renderChatList();
+    return;
+  }
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    });
+    if (!res.ok) throw new Error('Search failed');
+    const data = await res.json();
+    // Отобразить результаты поиска (упрощённо – вставить в список)
+    const listEl = document.getElementById('chat-list');
+    listEl.innerHTML = '';
+    data.users.forEach(user => {
+      const item = document.createElement('div');
+      item.className = 'contact-item';
+      item.innerHTML = `
+        <div class="chat-avatar">${user.avatar || '👤'}</div>
+        <div class="chat-info">
+          <div class="chat-name">${escapeHtml(user.username)}</div>
+        </div>
       `;
-      attachAuthListeners();
-      initSocket();
-      loadChats();
-    }).catch(() => logout());
-  } else {
-    app.innerHTML = `
-      <div id="login-page" class="page active">${renderLoginPage()}</div>
-      <div id="register-page" class="page">${renderRegisterPage()}</div>
-    `;
-    attachAuthListeners();
+      item.addEventListener('click', () => showUserProfile(user.id));
+      listEl.appendChild(item);
+    });
+    data.chats.forEach(chat => {
+      const item = document.createElement('div');
+      item.className = 'chat-item';
+      item.innerHTML = `
+        <div class="chat-avatar">${chat.avatar || '📢'}</div>
+        <div class="chat-info">
+          <div class="chat-name">${escapeHtml(chat.title)}</div>
+          <div class="chat-last-msg">${chat.description || ''}</div>
+        </div>
+      `;
+      item.addEventListener('click', () => openChat(chat.id));
+      listEl.appendChild(item);
+    });
+  } catch (err) {
+    console.error(err);
   }
 }
 
-render();
+// ==================== ЭКСПОРТ ГЛОБАЛЬНЫХ ФУНКЦИЙ ====================
+// Для вызова из HTML
+window.showSettings = function() {
+  alert('Настройки (заглушка)');
+};
+
+window.showUserProfile = function(userId) {
+  alert('Профиль пользователя ' + userId);
+};
+
+window.showChatMenu = function(chatId) {
+  alert('Меню чата ' + chatId);
+};
+
+window.openChatInfo = function(chatId) {
+  alert('Информация о чате ' + chatId);
+};
+
+window.toggleSelectChat = function(chatId, e) {
+  e.stopPropagation();
+  const idx = selectedItems.indexOf(chatId);
+  if (idx === -1) selectedItems.push(chatId);
+  else selectedItems.splice(idx, 1);
+  renderChatList();
+};
+
+window.contextReply = contextReply;
+window.contextForward = contextForward;
+window.contextCopy = contextCopy;
+window.contextReact = contextReact;
+window.contextDelete = contextDelete;
+window.addEmoji = addEmoji;
+window.sendMessage = sendMessage;
+window.uploadFile = uploadFile;
+window.handleTyping = handleTyping;
+window.toggleEmojiPicker = toggleEmojiPicker;
+window.globalSearch = globalSearch;
+window.closeChat = closeChat;
