@@ -1,144 +1,157 @@
-const { query, transaction } = require('./database');
-const { addToQueue, generateId } = require('./utils');
+// messages.js — работа с сообщениями, реакциями, опросами
+const express = require('express');
+const router = express.Router();
+const authenticateToken = require('./authMiddleware');
+const { db } = require('./database');
+const { generateId, escapeHtml } = require('./utils');
 const logger = require('./logger');
 
-async function saveMessage(chatId, senderId, data) {
-  const { text, type = 'text', media, replyTo, forwardedFrom } = data;
-  if (!text && !media) throw new Error('Message content required');
+// Получить сообщения чата (с пагинацией)
+router.get('/:chatId', authenticateToken, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { limit = 50, before } = req.query; // before = timestamp последнего полученного сообщения
+    const userId = req.user.id;
 
-  const messageUid = generateId();
-  const result = await query(
-    `INSERT INTO messages (uid, chat_id, sender_id, type, content, media, reply_to, forwarded_from)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [messageUid, chatId, senderId, type, text || null, media ? JSON.stringify(media) : null, replyTo || null, forwardedFrom || null]
-  );
-  const message = result.rows[0];
-
-  // Update chat last message
-  await query('UPDATE chats SET last_message_id = $1 WHERE id = $2', [message.id, chatId]);
-
-  // Queue notifications
-  await addToQueue('notifications', { type: 'new_message', message });
-
-  // Get sender info
-  const sender = await query('SELECT id, username, avatar FROM users WHERE id = $1', [senderId]);
-  message.sender = sender.rows[0] || null;
-
-  return message;
-}
-
-async function getMessages(chatId, limit = 50, before = null) {
-  let sql = `
-    SELECT m.*,
-           u.id as sender_id, u.username as sender_username, u.avatar as sender_avatar,
-           r.id as reply_id, r.content as reply_content, r.type as reply_type
-    FROM messages m
-    LEFT JOIN users u ON m.sender_id = u.id
-    LEFT JOIN messages r ON m.reply_to = r.id
-    WHERE m.chat_id = $1 AND m.deleted = false
-  `;
-  const params = [chatId];
-  if (before) {
-    sql += ' AND m.id < $2';
-    params.push(before);
-  }
-  sql += ' ORDER BY m.created_at DESC LIMIT $' + (params.length + 1);
-  params.push(limit);
-
-  const result = await query(sql, params);
-  const messages = result.rows.map(row => ({
-    id: row.id,
-    uid: row.uid,
-    chat_id: row.chat_id,
-    type: row.type,
-    text: row.content,
-    media: row.media,
-    reply_to: row.reply_id ? {
-      id: row.reply_id,
-      content: row.reply_content,
-      type: row.reply_type
-    } : null,
-    forwarded_from: row.forwarded_from,
-    views: row.views,
-    edited: row.edited,
-    created_at: row.created_at,
-    sender: row.sender_id ? {
-      id: row.sender_id,
-      username: row.sender_username,
-      avatar: row.sender_avatar
-    } : null
-  }));
-  return messages;
-}
-
-async function editMessage(messageId, userId, newText) {
-  return transaction(async (client) => {
-    const msg = await client.query('SELECT sender_id FROM messages WHERE id = $1 AND deleted = false', [messageId]);
-    if (!msg.rows.length || msg.rows[0].sender_id !== userId) {
-      throw new Error('Not allowed');
-    }
-    const result = await client.query(
-      'UPDATE messages SET content = $1, edited = true, updated_at = NOW() WHERE id = $2 RETURNING *',
-      [newText, messageId]
+    // Проверка доступа
+    const access = await db.query(
+      'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
     );
-    return result.rows[0];
-  });
-}
-
-async function deleteMessage(messageId, userId, deleteForAll = false) {
-  return transaction(async (client) => {
-    if (deleteForAll) {
-      const msg = await client.query('SELECT sender_id FROM messages WHERE id = $1', [messageId]);
-      if (!msg.rows.length || msg.rows[0].sender_id !== userId) {
-        throw new Error('Not allowed');
-      }
-      await client.query('UPDATE messages SET deleted = true WHERE id = $1', [messageId]);
-    } else {
-      await client.query('UPDATE messages SET deleted = true WHERE id = $1 AND sender_id = $2', [messageId, userId]);
+    if (access.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к чату' });
     }
-  });
-}
 
-async function reactToMessage(messageId, userId, reaction) {
-  return transaction(async (client) => {
-    await client.query(
-      `INSERT INTO message_reactions (message_id, user_id, reaction)
-       VALUES ($1, $2, $3)
+    let query = `
+      SELECT m.*, 
+             u.username as sender_username, u.avatar as sender_avatar,
+             (SELECT json_agg(json_build_object('user_id', r.user_id, 'reaction', r.reaction))
+              FROM message_reactions r WHERE r.message_id = m.id) as reactions
+      FROM messages m
+      JOIN users u ON m.sender_id = u.id
+      WHERE m.chat_id = $1
+    `;
+    const params = [chatId];
+    if (before) {
+      query += ` AND m.created_at < $2`;
+      params.push(new Date(parseInt(before)));
+    }
+    query += ` ORDER BY m.created_at DESC LIMIT $${params.length + 1}`;
+    params.push(parseInt(limit));
+
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    logger.error('Get messages error:', err);
+    res.status(500).json({ error: 'Ошибка получения сообщений' });
+  }
+});
+
+// Отправить сообщение
+router.post('/:chatId', authenticateToken, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { content, type = 'text', fileUrl, fileName, fileSize, mimeType, pollData } = req.body;
+    const senderId = req.user.id;
+
+    // Проверка доступа
+    const access = await db.query(
+      'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+      [chatId, senderId]
+    );
+    if (access.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к чату' });
+    }
+
+    const messageId = generateId();
+    await db.query(
+      `INSERT INTO messages (id, chat_id, sender_id, content, type, file_url, file_name, file_size, mime_type, poll_data, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+      [messageId, chatId, senderId, content, type, fileUrl, fileName, fileSize, mimeType, pollData ? JSON.stringify(pollData) : null]
+    );
+
+    const newMsg = await db.query(
+      `SELECT m.*, u.username as sender_username, u.avatar as sender_avatar
+       FROM messages m
+       JOIN users u ON m.sender_id = u.id
+       WHERE m.id = $1`,
+      [messageId]
+    );
+    res.status(201).json(newMsg.rows[0]);
+  } catch (err) {
+    logger.error('Send message error:', err);
+    res.status(500).json({ error: 'Ошибка отправки сообщения' });
+  }
+});
+
+// Добавить реакцию
+router.post('/:messageId/reactions', authenticateToken, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { reaction } = req.body;
+    const userId = req.user.id;
+
+    await db.query(
+      `INSERT INTO message_reactions (message_id, user_id, reaction, created_at)
+       VALUES ($1, $2, $3, NOW())
        ON CONFLICT (message_id, user_id, reaction) DO NOTHING`,
       [messageId, userId, reaction]
     );
-    const reactions = await client.query(
-      'SELECT reaction, COUNT(*) FROM message_reactions WHERE message_id = $1 GROUP BY reaction',
-      [messageId]
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Add reaction error:', err);
+    res.status(500).json({ error: 'Ошибка добавления реакции' });
+  }
+});
+
+// Удалить реакцию
+router.delete('/:messageId/reactions/:reaction', authenticateToken, async (req, res) => {
+  try {
+    const { messageId, reaction } = req.params;
+    const userId = req.user.id;
+    await db.query(
+      'DELETE FROM message_reactions WHERE message_id = $1 AND user_id = $2 AND reaction = $3',
+      [messageId, userId, reaction]
     );
-    return reactions.rows;
-  });
-}
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Remove reaction error:', err);
+    res.status(500).json({ error: 'Ошибка удаления реакции' });
+  }
+});
 
-async function markAsRead(chatId, userId, messageIds) {
-  if (!messageIds || !messageIds.length) return;
-  const values = messageIds.map(id => `(${id}, ${userId})`).join(',');
-  await query(
-    `INSERT INTO message_reads (message_id, user_id) VALUES ${values} ON CONFLICT DO NOTHING`
-  );
-}
+// Удалить сообщение (у себя или у всех)
+router.delete('/:messageId', authenticateToken, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { forAll } = req.query; // если true, удаляем у всех (только админ/владелец)
+    const userId = req.user.id;
 
-async function getUnreadCount(userId, chatId) {
-  const result = await query(
-    `SELECT COUNT(*) FROM messages m
-     WHERE m.chat_id = $1 AND m.deleted = false
-       AND NOT EXISTS (SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.user_id = $2)`,
-    [chatId, userId]
-  );
-  return parseInt(result.rows[0].count);
-}
+    const msg = await db.query('SELECT sender_id, chat_id FROM messages WHERE id = $1', [messageId]);
+    if (msg.rows.length === 0) return res.status(404).json({ error: 'Сообщение не найдено' });
 
-module.exports = {
-  saveMessage,
-  getMessages,
-  editMessage,
-  deleteMessage,
-  reactToMessage,
-  markAsRead,
-  getUnreadCount,
-};
+    if (forAll === 'true') {
+      // Проверка прав на удаление у всех
+      const roleCheck = await db.query(
+        'SELECT role FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+        [msg.rows[0].chat_id, userId]
+      );
+      if (roleCheck.rows.length === 0 || !['owner', 'admin'].includes(roleCheck.rows[0].role)) {
+        return res.status(403).json({ error: 'Недостаточно прав для удаления сообщения у всех' });
+      }
+      await db.query('DELETE FROM messages WHERE id = $1', [messageId]);
+    } else {
+      // Удаляем только у себя (помечаем как удалённое)
+      await db.query(
+        'INSERT INTO hidden_messages (user_id, message_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [userId, messageId]
+      );
+    }
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Delete message error:', err);
+    res.status(500).json({ error: 'Ошибка удаления сообщения' });
+  }
+});
+
+module.exports = router;
