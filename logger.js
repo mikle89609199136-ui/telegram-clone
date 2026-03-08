@@ -1,7 +1,7 @@
-// logger.js — модуль логирования (в консоль и файл)
+// logger.js – logging module
 const fs = require('fs-extra');
 const path = require('path');
-const config = require('./config'); // Будет создан позже
+const config = require('./config');
 
 const logDir = path.join(__dirname, 'logs');
 fs.ensureDirSync(logDir);
@@ -26,12 +26,10 @@ class Logger {
     const timestamp = new Date().toISOString();
     const formatted = `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.length ? JSON.stringify(args) : ''}\n`;
 
-    // В консоль (кроме debug в production)
-    if (process.env.NODE_ENV !== 'production' || level !== 'debug') {
+    if (config.NODE_ENV !== 'production' || level !== 'debug') {
       console[level === 'debug' ? 'log' : level](formatted.trim());
     }
 
-    // В файл
     fs.appendFileSync(this.logFile, formatted);
     if (level === 'error') {
       fs.appendFileSync(this.errorFile, formatted);
@@ -44,4 +42,4 @@ class Logger {
   error(message, ...args) { this._write('error', message, ...args); }
 }
 
-module.exports = new Logger(process.env.NODE_ENV === 'development' ? 'debug' : 'info');
+module.exports = new Logger(config.NODE_ENV === 'development' ? 'debug' : 'info');
