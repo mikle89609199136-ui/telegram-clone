@@ -1,3 +1,2 @@
-// index.js — запуск приложения (только импорт server.js)
-// Правило 49: index.js только запускает приложение
-require('./server');
+// index.js – just re-exports server.js (kept for compatibility)
+module.exports = require('./server');
