@@ -1,14 +1,11 @@
-// migrate.js — скрипт для создания таблиц в БД (запускается отдельно)
+// migrate.js – database migrations runner
 const { db } = require('./database');
 const logger = require('./logger');
-const fs = require('fs-extra');
-const path = require('path');
 
 async function runMigrations() {
+  logger.info('Running database migrations...');
   try {
-    logger.info('Running database migrations...');
-
-    // Создание таблиц (PostgreSQL синтаксис, для SQLite будет адаптирован)
+    // Users table
     await db.query(`
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(36) PRIMARY KEY,
@@ -30,6 +27,7 @@ async function runMigrations() {
       )
     `);
 
+    // Sessions table
     await db.query(`
       CREATE TABLE IF NOT EXISTS sessions (
         id VARCHAR(36) PRIMARY KEY,
@@ -41,6 +39,7 @@ async function runMigrations() {
       )
     `);
 
+    // Chats table
     await db.query(`
       CREATE TABLE IF NOT EXISTS chats (
         id VARCHAR(36) PRIMARY KEY,
@@ -56,6 +55,7 @@ async function runMigrations() {
       )
     `);
 
+    // Chat participants
     await db.query(`
       CREATE TABLE IF NOT EXISTS chat_participants (
         chat_id VARCHAR(36) REFERENCES chats(id) ON DELETE CASCADE,
@@ -67,6 +67,7 @@ async function runMigrations() {
       )
     `);
 
+    // Messages
     await db.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id VARCHAR(36) PRIMARY KEY,
@@ -79,11 +80,13 @@ async function runMigrations() {
         file_size INTEGER,
         mime_type TEXT,
         poll_data JSONB,
+        ai_metadata JSONB,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
+    // Message reactions
     await db.query(`
       CREATE TABLE IF NOT EXISTS message_reactions (
         message_id VARCHAR(36) REFERENCES messages(id) ON DELETE CASCADE,
@@ -94,6 +97,16 @@ async function runMigrations() {
       )
     `);
 
+    // Hidden messages (per user)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS hidden_messages (
+        user_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE,
+        message_id VARCHAR(36) REFERENCES messages(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, message_id)
+      )
+    `);
+
+    // Contacts
     await db.query(`
       CREATE TABLE IF NOT EXISTS contacts (
         user_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE,
@@ -104,6 +117,7 @@ async function runMigrations() {
       )
     `);
 
+    // Folders
     await db.query(`
       CREATE TABLE IF NOT EXISTS folders (
         id VARCHAR(36) PRIMARY KEY,
@@ -114,6 +128,7 @@ async function runMigrations() {
       )
     `);
 
+    // Folder chats
     await db.query(`
       CREATE TABLE IF NOT EXISTS folder_chats (
         folder_id VARCHAR(36) REFERENCES folders(id) ON DELETE CASCADE,
@@ -122,6 +137,7 @@ async function runMigrations() {
       )
     `);
 
+    // Calls
     await db.query(`
       CREATE TABLE IF NOT EXISTS calls (
         id VARCHAR(36) PRIMARY KEY,
@@ -133,6 +149,7 @@ async function runMigrations() {
       )
     `);
 
+    // Push subscriptions
     await db.query(`
       CREATE TABLE IF NOT EXISTS push_subscriptions (
         user_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE,
@@ -143,11 +160,17 @@ async function runMigrations() {
       )
     `);
 
+    // AI logs
     await db.query(`
-      CREATE TABLE IF NOT EXISTS hidden_messages (
-        user_id VARCHAR(36) REFERENCES users(id) ON DELETE CASCADE,
-        message_id VARCHAR(36) REFERENCES messages(id) ON DELETE CASCADE,
-        PRIMARY KEY (user_id, message_id)
+      CREATE TABLE IF NOT EXISTS ai_logs (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) REFERENCES users(id),
+        chat_id VARCHAR(36) REFERENCES chats(id),
+        request TEXT,
+        response TEXT,
+        model VARCHAR(50),
+        tokens_used INTEGER,
+        created_at TIMESTAMP DEFAULT NOW()
       )
     `);
 
