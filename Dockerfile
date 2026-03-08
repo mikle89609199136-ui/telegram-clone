@@ -9,8 +9,8 @@ RUN npm ci --only=production
 # Копирование исходников
 COPY . .
 
-# Сборка (если нужна)
-# RUN npm run build
+# Создание необходимых папок
+RUN mkdir -p uploads logs data
 
 # Открытие порта
 EXPOSE 3000
