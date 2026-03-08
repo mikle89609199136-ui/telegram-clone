@@ -2,20 +2,18 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Копирование package.json и package-lock.json (если есть)
+# Install dependencies
 COPY package*.json ./
-
-# Установка только production-зависимостей (не требует package-lock.json)
 RUN npm install --production
 
-# Копирование остальных файлов проекта
+# Copy source
 COPY . .
 
-# Создание необходимых папок для данных и загрузок
+# Create necessary folders
 RUN mkdir -p uploads logs data
 
-# Открытие порта
+# Expose port
 EXPOSE 3000
 
-# Команда запуска
+# Start
 CMD ["npm", "start"]
