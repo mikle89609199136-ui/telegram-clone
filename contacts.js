@@ -1,87 +1,64 @@
+// contacts.js — контакты и локальные имена
 const express = require('express');
-const { query } = require('./database');
-const logger = require('./logger');
 const router = express.Router();
+const authenticateToken = require('./authMiddleware');
+const { db } = require('./database');
+const logger = require('./logger');
 
-router.get('/', async (req, res) => {
-  const userId = req.userId;
+// Получить список контактов
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const result = await query(
-      `SELECT u.id, u.uid, u.username, u.avatar, u.bio, u.online, u.last_seen
-       FROM contacts c JOIN users u ON c.contact_id = u.id
-       WHERE c.user_id = $1
-       ORDER BY u.username`,
-      [userId]
+    const result = await db.query(
+      `SELECT u.id, u.username, u.name, u.avatar, u.status, u.last_seen,
+              c.local_name
+       FROM contacts c
+       JOIN users u ON c.contact_id = u.id
+       WHERE c.user_id = $1`,
+      [req.user.id]
     );
     res.json(result.rows);
   } catch (err) {
-    logger.error('Get contacts error', err);
-    res.status(500).json({ error: 'Database error' });
+    logger.error('Get contacts error:', err);
+    res.status(500).json({ error: 'Ошибка получения контактов' });
   }
 });
 
-router.post('/add', async (req, res) => {
-  const userId = req.userId;
-  const { contactId } = req.body;
-  if (!contactId) return res.status(400).json({ error: 'contactId required' });
-  if (userId === contactId) return res.status(400).json({ error: 'Cannot add yourself' });
-
+// Добавить контакт
+router.post('/', authenticateToken, async (req, res) => {
   try {
-    await query(
-      'INSERT INTO contacts (user_id, contact_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [userId, contactId]
+    const { contactId, localName } = req.body;
+    const userId = req.user.id;
+
+    const user = await db.query('SELECT id FROM users WHERE id = $1', [contactId]);
+    if (user.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
+    await db.query(
+      `INSERT INTO contacts (user_id, contact_id, local_name, created_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, contact_id) DO UPDATE SET local_name = EXCLUDED.local_name`,
+      [userId, contactId, localName]
     );
     res.json({ success: true });
   } catch (err) {
-    logger.error('Add contact error', err);
-    res.status(500).json({ error: 'Database error' });
+    logger.error('Add contact error:', err);
+    res.status(500).json({ error: 'Ошибка добавления контакта' });
   }
 });
 
-router.delete('/:contactId', async (req, res) => {
-  const userId = req.userId;
-  const contactId = parseInt(req.params.contactId);
-  if (isNaN(contactId)) return res.status(400).json({ error: 'Invalid contact ID' });
-
+// Удалить контакт
+router.delete('/:contactId', authenticateToken, async (req, res) => {
   try {
-    await query('DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2', [userId, contactId]);
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Remove contact error', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-router.post('/block', async (req, res) => {
-  const userId = req.userId;
-  const { blockedId } = req.body;
-  if (!blockedId) return res.status(400).json({ error: 'blockedId required' });
-  if (userId === blockedId) return res.status(400).json({ error: 'Cannot block yourself' });
-
-  try {
-    await query(
-      'INSERT INTO blocked_users (user_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [userId, blockedId]
+    const { contactId } = req.params;
+    await db.query(
+      'DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2',
+      [req.user.id, contactId]
     );
-    await query('DELETE FROM contacts WHERE user_id = $1 AND contact_id = $2', [userId, blockedId]);
     res.json({ success: true });
   } catch (err) {
-    logger.error('Block user error', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
-
-router.delete('/unblock/:blockedId', async (req, res) => {
-  const userId = req.userId;
-  const blockedId = parseInt(req.params.blockedId);
-  if (isNaN(blockedId)) return res.status(400).json({ error: 'Invalid blocked ID' });
-
-  try {
-    await query('DELETE FROM blocked_users WHERE user_id = $1 AND blocked_id = $2', [userId, blockedId]);
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Unblock user error', err);
-    res.status(500).json({ error: 'Database error' });
+    logger.error('Delete contact error:', err);
+    res.status(500).json({ error: 'Ошибка удаления контакта' });
   }
 });
 
