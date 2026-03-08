@@ -1,131 +1,173 @@
+// auth.js — маршруты аутентификации (регистрация, вход, выход, восстановление)
 const express = require('express');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const { query, transaction } = require('./database');
-const logger = require('./logger');
-const config = require('./config');
-const { validateEmail, validateUsername, generateId } = require('./utils');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const config = require('./config');
+const logger = require('./logger');
+const { db } = require('./database');
+const { hashPassword, comparePassword, sanitizeUser } = require('./utils');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('./email'); // будет в notify
 
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  skipSuccessfulRequests: true,
-  keyGenerator: (req) => req.ip
-});
-
+// Регистрация
 router.post('/register', async (req, res) => {
-  const { username, email, password } = req.body;
-  if (!username || !email || !password) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-  if (!validateUsername(username)) {
-    return res.status(400).json({ error: 'Invalid username (3-30 letters, numbers, underscore)' });
-  }
-  if (!validateEmail(email)) {
-    return res.status(400).json({ error: 'Invalid email' });
-  }
-  if (password.length < 6) {
-    return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  }
-
   try {
-    const existing = await query('SELECT id FROM users WHERE email = $1 OR username = $2', [email, username]);
-    if (existing.rows.length) {
-      return res.status(409).json({ error: 'Email or username already taken' });
+    const { username, email, password } = req.body;
+
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Все поля обязательны' });
     }
 
-    const hash = await bcrypt.hash(password, config.bcryptRounds);
-    const result = await query(
-      'INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING id, uid, username, email, avatar, bio, verified',
-      [username, email, hash]
+    // Проверка существования
+    const existing = await db.query(
+      'SELECT id FROM users WHERE username = $1 OR email = $2',
+      [username, email]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: 'Имя пользователя или email уже заняты' });
+    }
+
+    const hashed = await hashPassword(password);
+    const userId = uuidv4();
+
+    await db.query(
+      `INSERT INTO users (id, username, email, password_hash, status, last_seen)
+       VALUES ($1, $2, $3, $4, 'offline', NOW())`,
+      [userId, username, email, hashed]
+    );
+
+    const token = jwt.sign({ id: userId, username }, config.JWT_SECRET, {
+      expiresIn: config.JWT_EXPIRES_IN,
+    });
+
+    // Запоминаем сессию (устройство)
+    const deviceInfo = req.headers['user-agent'];
+    const sessionId = uuidv4();
+    await db.query(
+      `INSERT INTO sessions (id, user_id, token, device_info, expires_at)
+       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 year')`,
+      [sessionId, userId, token, deviceInfo]
+    );
+
+    // Отправка приветственного письма (опционально)
+    // sendVerificationEmail(email, token);
+
+    res.status(201).json({
+      token,
+      user: { id: userId, username, email, avatar: null, status: 'offline' }
+    });
+  } catch (err) {
+    logger.error('Registration error:', err);
+    res.status(500).json({ error: 'Ошибка регистрации' });
+  }
+});
+
+// Вход
+router.post('/login', async (req, res) => {
+  try {
+    const { identifier, password } = req.body;
+
+    if (!identifier || !password) {
+      return res.status(400).json({ error: 'Введите логин и пароль' });
+    }
+
+    const result = await db.query(
+      'SELECT * FROM users WHERE username = $1 OR email = $1',
+      [identifier]
     );
     const user = result.rows[0];
-    await query('INSERT INTO user_settings (user_id) VALUES ($1)', [user.id]);
 
-    const tokens = await generateTokens(user.id, req);
-    res.status(201).json({ user, ...tokens });
+    if (!user || !(await comparePassword(password, user.password_hash))) {
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
+    }
+
+    // Обновляем статус
+    await db.query(
+      'UPDATE users SET status = $1, last_seen = NOW() WHERE id = $2',
+      ['online', user.id]
+    );
+
+    const token = jwt.sign({ id: user.id, username: user.username }, config.JWT_SECRET, {
+      expiresIn: config.JWT_EXPIRES_IN,
+    });
+
+    // Запоминаем сессию
+    const deviceInfo = req.headers['user-agent'];
+    const sessionId = uuidv4();
+    await db.query(
+      `INSERT INTO sessions (id, user_id, token, device_info, expires_at)
+       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '1 year')`,
+      [sessionId, user.id, token, deviceInfo]
+    );
+
+    res.json({
+      token,
+      user: sanitizeUser(user)
+    });
   } catch (err) {
-    logger.error('Register error', err);
-    res.status(500).json({ error: 'Internal server error' });
+    logger.error('Login error:', err);
+    res.status(500).json({ error: 'Ошибка входа' });
   }
 });
 
-router.post('/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password required' });
-  }
-
+// Выход (удаляем сессию)
+router.post('/logout', async (req, res) => {
   try {
-    const result = await query('SELECT id, username, email, password_hash, avatar, bio, verified FROM users WHERE email = $1', [email]);
-    const user = result.rows[0];
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      await db.query('DELETE FROM sessions WHERE token = $1', [token]);
     }
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const tokens = await generateTokens(user.id, req);
-    const { password_hash, ...safeUser } = user;
-    res.json({ user: safeUser, ...tokens });
+    res.json({ success: true });
   } catch (err) {
-    logger.error('Login error', err);
-    res.status(500).json({ error: 'Internal server error' });
+    logger.error('Logout error:', err);
+    res.status(500).json({ error: 'Ошибка выхода' });
   }
 });
 
-router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) return res.status(401).json({ error: 'No refresh token' });
-
+// Запрос на восстановление пароля
+router.post('/forgot', async (req, res) => {
   try {
-    const payload = jwt.verify(refreshToken, config.jwtRefreshSecret);
-    const session = await query('SELECT user_id FROM sessions WHERE token = $1', [refreshToken]);
-    if (!session.rows.length) {
-      return res.status(401).json({ error: 'Invalid refresh token' });
+    const { email } = req.body;
+    const result = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Пользователь с таким email не найден' });
     }
-    const newTokens = await generateTokens(payload.userId, req, refreshToken);
-    res.json(newTokens);
+
+    const resetToken = jwt.sign({ email }, config.JWT_SECRET, { expiresIn: '1h' });
+    await sendPasswordResetEmail(email, resetToken);
+
+    res.json({ success: true, message: 'Инструкции отправлены на email' });
   } catch (err) {
-    logger.error('Refresh error', err);
-    return res.status(401).json({ error: 'Invalid refresh token' });
+    logger.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Ошибка отправки письма' });
   }
 });
 
-router.post('/logout', require('./authMiddleware'), async (req, res) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader.split(' ')[1];
-  await query('DELETE FROM sessions WHERE token = $1', [token]);
-  res.json({ success: true });
-});
+// Сброс пароля
+router.post('/reset', async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    let decoded;
+    try {
+      decoded = jwt.verify(token, config.JWT_SECRET);
+    } catch {
+      return res.status(400).json({ error: 'Неверная или просроченная ссылка' });
+    }
 
-router.post('/logout-all', require('./authMiddleware'), async (req, res) => {
-  await query('DELETE FROM sessions WHERE user_id = $1', [req.userId]);
-  res.json({ success: true });
-});
+    const hashed = await hashPassword(newPassword);
+    await db.query('UPDATE users SET password_hash = $1 WHERE email = $2', [hashed, decoded.email]);
 
-async function generateTokens(userId, req, oldToken = null) {
-  const accessToken = jwt.sign({ userId }, config.jwtSecret, { expiresIn: config.jwtAccessExpiry });
-  const refreshToken = jwt.sign({ userId }, config.jwtRefreshSecret, { expiresIn: config.jwtRefreshExpiry });
+    // Удаляем все сессии пользователя
+    const userResult = await db.query('SELECT id FROM users WHERE email = $1', [decoded.email]);
+    if (userResult.rows[0]) {
+      await db.query('DELETE FROM sessions WHERE user_id = $1', [userResult.rows[0].id]);
+    }
 
-  const deviceInfo = {
-    userAgent: req.headers['user-agent'],
-    ip: req.ip,
-  };
-  await query(
-    'INSERT INTO sessions (user_id, token, device_info, ip) VALUES ($1, $2, $3, $4)',
-    [userId, refreshToken, deviceInfo, req.ip]
-  );
-
-  if (oldToken) {
-    await query('DELETE FROM sessions WHERE token = $1', [oldToken]);
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('Reset password error:', err);
+    res.status(500).json({ error: 'Ошибка смены пароля' });
   }
-
-  return { accessToken, refreshToken };
-}
+});
 
 module.exports = router;
