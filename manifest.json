@@ -1,0 +1,21 @@
+{
+  "name": "Zhuravlev Telegram",
+  "short_name": "ZTelegram",
+  "description": "Полноценный клон Telegram",
+  "start_url": "/chat.html",
+  "display": "standalone",
+  "background_color": "#0e1621",
+  "theme_color": "#17212b",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
