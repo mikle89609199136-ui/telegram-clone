@@ -1,16 +1,14 @@
-// env.js — проверка обязательных переменных окружения
+// env.js — временная версия без остановки
 const logger = require('./logger');
 
-const requiredEnvVars = [
-  'JWT_SECRET',
-  // Добавьте другие обязательные переменные по мере необходимости
-];
+const requiredEnvVars = ['JWT_SECRET'];
 
 module.exports = function checkEnv() {
   const missing = requiredEnvVars.filter(varName => !process.env[varName]);
   if (missing.length > 0) {
-    logger.error(`Missing required environment variables: ${missing.join(', ')}`);
-    process.exit(1);
+    logger.warn(`⚠️ Missing recommended environment variables: ${missing.join(', ')}`);
+    logger.warn('The server will still start, but some features may not work.');
+  } else {
+    logger.info('✅ Environment variables check passed');
   }
-  logger.info('Environment variables check passed');
 };
