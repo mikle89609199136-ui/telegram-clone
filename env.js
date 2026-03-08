@@ -3,7 +3,7 @@ const logger = require('./logger');
 
 const requiredEnvVars = [
   'JWT_SECRET',
-  // Добавьте другие обязательные переменные
+  // Добавьте другие обязательные переменные по мере необходимости
 ];
 
 module.exports = function checkEnv() {
