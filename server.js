@@ -1,161 +1,150 @@
+// server.js — основной файл сервера (настройка Express, middleware, маршруты)
 const express = require('express');
 const http = require('http');
-const cluster = require('cluster');
-const os = require('os');
+const socketIo = require('socket.io');
+const path = require('path');
+const fs = require('fs-extra');
 const compression = require('compression');
-const dotenv = require('dotenv');
-const { Server } = require('socket.io');
-const { createAdapter } = require('@socket.io/redis-adapter');
-const { createClient } = require('redis');
-const { initDatabase } = require('./database');
-const logger = require('./logger');
+const morgan = require('morgan');
 const config = require('./config');
+const logger = require('./logger');
+const checkEnv = require('./env');
+const { corsOptions, limiter, helmetConfig } = require('./security');
+const { handleMulterError } = require('./upload');
+const { db } = require('./database');
+const authMiddleware = require('./authMiddleware');
 
-dotenv.config();
+// Проверка переменных окружения
+checkEnv();
 
-const SERVICE = config.service;
+// Создание директорий
+fs.ensureDirSync(config.UPLOAD.dir);
+fs.ensureDirSync(path.join(__dirname, 'logs'));
+fs.ensureDirSync(path.join(__dirname, 'data'));
 
-if (cluster.isMaster && config.nodeEnv === 'production' && SERVICE === 'api') {
-  const numWorkers = os.cpus().length;
-  logger.info(`Master setting up ${numWorkers} workers`);
-  for (let i = 0; i < numWorkers; i++) cluster.fork();
-  cluster.on('exit', (worker) => {
-    logger.error(`Worker ${worker.process.pid} died, restarting...`);
-    cluster.fork();
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: { origin: config.FRONTEND_URL, methods: ['GET', 'POST'] },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
+
+// Middleware
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
+
+// Безопасность
+app.use(require('helmet')(helmetConfig));
+app.use(require('cors')(corsOptions));
+app.use('/api/', limiter); // Правило 58
+
+// Статические файлы из public (Правило 61)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Подключение маршрутов
+app.use('/api/auth', require('./auth'));
+app.use('/api/users', require('./users'));
+app.use('/api/chats', require('./chats'));
+app.use('/api/messages', require('./messages'));
+app.use('/api/channels', require('./channels'));
+app.use('/api/contacts', require('./contacts'));
+app.use('/api/calls', require('./calls'));
+app.use('/api/media', require('./media'));
+app.use('/api/search', require('./search'));
+app.use('/api/settings', require('./settings'));
+app.use('/api/profile', require('./profile'));
+app.use('/api/notifications', require('./notifications'));
+app.use('/api/ai', require('./ai'));
+app.use('/api/upload', require('./upload')); // будет экспортировать маршруты загрузки
+
+// Обработка ошибок multer
+app.use(handleMulterError);
+
+// Health check для Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Для всех остальных путей отдаём chat.html (SPA)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+});
+
+// Socket.IO
+const socketHandler = require('./index')(io); // Если мы вынесем обработчики в отдельный файл, но можно и здесь
+// Пока оставим встроенным для простоты
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (!token) return next(new Error('Authentication error'));
+  const jwt = require('jsonwebtoken');
+  jwt.verify(token, config.JWT_SECRET, (err, user) => {
+    if (err) return next(new Error('Invalid token'));
+    socket.userId = user.id;
+    socket.username = user.username;
+    next();
   });
-} else {
-  startService(SERVICE);
-}
+});
 
-async function startService(service) {
-  await initDatabase();
+io.on('connection', async (socket) => {
+  logger.info(`Socket connected: ${socket.username} (${socket.userId})`);
 
-  const redisPub = createClient({ url: config.redisUrl, socket: { tls: config.redisTls } });
-  const redisSub = createClient({ url: config.redisUrl, socket: { tls: config.redisTls } });
-  redisPub.on('error', (err) => logger.error('Redis pub error', err));
-  redisSub.on('error', (err) => logger.error('Redis sub error', err));
-  await redisPub.connect();
-  await redisSub.connect();
+  // Обновляем статус
+  await db.query('UPDATE users SET status = $1, last_seen = NOW() WHERE id = $2', ['online', socket.userId]);
 
-  const app = express();
-  const server = http.createServer(app);
-  const io = new Server(server, {
-    cors: { origin: config.corsOrigin },
-    adapter: createAdapter(redisPub, redisSub),
-    pingTimeout: 60000,
-    pingInterval: 25000,
-    transports: ['websocket', 'polling']
-  });
+  // Присоединяем к комнатам чатов
+  const chats = await db.query('SELECT chat_id FROM chat_participants WHERE user_id = $1', [socket.userId]);
+  chats.rows.forEach(row => socket.join(`chat:${row.chat_id}`));
+  socket.join(`user:${socket.userId}`);
 
-  app.use(compression());
-  app.use(express.json({ limit: config.maxMessageSize }));
-  app.use(express.urlencoded({ extended: true, limit: config.maxMessageSize }));
-  require('./security').applySecurity(app);
+  // Обработчики событий
+  socket.on('sendMessage', async (data) => {
+    try {
+      const { chatId, content, type } = data;
+      // Проверка доступа
+      const access = await db.query('SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2', [chatId, socket.userId]);
+      if (access.rows.length === 0) return;
 
-  app.get('/health', (req, res) => res.send('OK'));
-  app.get('/metrics', async (req, res) => {
-    const client = require('prom-client');
-    res.set('Content-Type', client.register.contentType);
-    res.end(await client.register.metrics());
-  });
+      const messageId = require('uuid').v4();
+      await db.query(
+        `INSERT INTO messages (id, chat_id, sender_id, content, type, created_at) VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [messageId, chatId, socket.userId, content, type]
+      );
+      const newMsg = await db.query(
+        `SELECT m.*, u.username as sender_username, u.avatar as sender_avatar
+         FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.id = $1`,
+        [messageId]
+      );
+      io.to(`chat:${chatId}`).emit('newMessage', newMsg.rows[0]);
 
-  if (service === 'api' || service === 'all') {
-    app.use('/auth', require('./auth'));
-    app.use('/users', require('./authMiddleware'), require('./users'));
-    app.use('/chats', require('./authMiddleware'), require('./chats'));
-    app.use('/messages', require('./authMiddleware'), require('./messages'));
-    app.use('/contacts', require('./authMiddleware'), require('./contacts'));
-    app.use('/profile', require('./authMiddleware'), require('./profile'));
-    app.use('/settings', require('./authMiddleware'), require('./settings'));
-    app.use('/search', require('./authMiddleware'), require('./search'));
-    app.use('/calls', require('./authMiddleware'), require('./calls'));
-    app.use('/upload', require('./authMiddleware'), require('./upload'));
-    app.use('/ai', require('./authMiddleware'), require('./ai'));
-    app.use(express.static('public'));
-  }
-
-  if (service === 'ws' || service === 'all') {
-    const socketAuth = require('./authMiddleware').socketAuth;
-    io.use(socketAuth);
-    io.on('connection', (socket) => {
-      const userId = socket.userId;
-      socket.join(`user:${userId}`);
-
-      socket.on('joinChat', (chatId) => {
-        socket.join(`chat:${chatId}`);
-      });
-
-      socket.on('leaveChat', (chatId) => {
-        socket.leave(`chat:${chatId}`);
-      });
-
-      socket.on('sendMessage', async (data) => {
-        try {
-          const message = await require('./messages').saveMessage(data.chatId, userId, data);
-          io.to(`chat:${data.chatId}`).emit('newMessage', message);
-        } catch (err) {
-          logger.error('sendMessage error', err);
-          socket.emit('error', { message: 'Failed to send message' });
-        }
-      });
-
-      socket.on('typing', (data) => {
-        socket.to(`chat:${data.chatId}`).emit('typing', { userId, chatId: data.chatId });
-      });
-
-      socket.on('stopTyping', (data) => {
-        socket.to(`chat:${data.chatId}`).emit('stopTyping', { userId, chatId: data.chatId });
-      });
-
-      socket.on('readMessages', async (data) => {
-        try {
-          await require('./messages').markAsRead(data.chatId, userId, data.messageIds);
-          socket.to(`chat:${data.chatId}`).emit('messagesRead', { userId, messageIds: data.messageIds });
-        } catch (err) {
-          logger.error('readMessages error', err);
-        }
-      });
-
-      socket.on('call:offer', (data) => require('./calls').handleOffer(socket, data));
-      socket.on('call:answer', (data) => require('./calls').handleAnswer(socket, data));
-      socket.on('call:ice-candidate', (data) => require('./calls').handleIceCandidate(socket, data));
-      socket.on('call:end', (data) => require('./calls').handleEnd(socket, data));
-
-      socket.on('disconnect', async () => {
-        await require('./users').setOffline(userId);
-        socket.broadcast.emit('userOffline', userId);
-      });
-    });
-  }
-
-  if (service === 'media') {
-    app.use('/upload', require('./upload'));
-  }
-
-  if (service === 'ai') {
-    app.use('/ai', require('./ai'));
-  }
-
-  const port = config.port;
-  server.listen(port, '0.0.0.0', () => {
-    logger.info(`${service} service listening on port ${port}`);
+      // Обновление последнего сообщения в чате (можно через триггер)
+    } catch (err) {
+      logger.error('Socket sendMessage error:', err);
+    }
   });
 
-  const gracefulShutdown = async () => {
-    logger.info('Received shutdown signal, closing server...');
-    server.close(async () => {
-      await redisPub.quit();
-      await redisSub.quit();
-      process.exit(0);
-    });
-  };
-  process.on('SIGTERM', gracefulShutdown);
-  process.on('SIGINT', gracefulShutdown);
+  socket.on('typing', ({ chatId, isTyping }) => {
+    socket.to(`chat:${chatId}`).emit('userTyping', { userId: socket.userId, username: socket.username, isTyping });
+  });
 
-  process.on('uncaughtException', (err) => {
-    logger.error('Uncaught exception', err);
+  socket.on('disconnect', async () => {
+    logger.info(`Socket disconnected: ${socket.username}`);
+    await db.query('UPDATE users SET status = $1, last_seen = NOW() WHERE id = $2', ['offline', socket.userId]);
   });
-  process.on('unhandledRejection', (err) => {
-    logger.error('Unhandled rejection', err);
-  });
-}
+});
+
+// Правило 56: закрытие соединений с БД при завершении
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, closing connections...');
+  await db.end();
+  server.close(() => process.exit(0));
+});
+
+// Запуск сервера
+server.listen(config.PORT, '0.0.0.0', () => {
+  logger.info(`Server running on port ${config.PORT}`);
+});
+
+module.exports = { app, server, io };
