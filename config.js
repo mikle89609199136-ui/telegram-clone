@@ -1,38 +1,58 @@
-const dotenv = require('dotenv');
-dotenv.config();
+// config.js — централизованная конфигурация приложения
+const path = require('path');
+
+require('dotenv').config();
 
 module.exports = {
-  nodeEnv: process.env.NODE_ENV || 'development',
-  port: process.env.PORT || 3000,
-  service: process.env.SERVICE || 'api',
-  databaseUrl: process.env.DATABASE_URL,
-  databaseReplicaUrl: process.env.DATABASE_REPLICA_URL,
-  redisUrl: process.env.REDIS_URL,
-  redisTls: process.env.REDIS_TLS === 'true',
-  jwtSecret: process.env.JWT_SECRET,
-  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
-  jwtAccessExpiry: process.env.JWT_ACCESS_EXPIRY || '15m',
-  jwtRefreshExpiry: process.env.JWT_REFRESH_EXPIRY || '7d',
-  bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS) || 12,
-  s3: {
-    endpoint: process.env.S3_ENDPOINT,
-    accessKey: process.env.S3_ACCESS_KEY,
-    secretKey: process.env.S3_SECRET_KEY,
-    bucket: process.env.S3_BUCKET,
-    useSSL: process.env.S3_USE_SSL === 'true',
+  // Сервер
+  PORT: process.env.PORT || 3000,
+  NODE_ENV: process.env.NODE_ENV || 'development',
+
+  // JWT
+  JWT_SECRET: process.env.JWT_SECRET,
+  JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '365d',
+
+  // База данных (по умолчанию PostgreSQL, можно переключить на SQLite)
+  DB: {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT) || 5432,
+    name: process.env.DB_NAME || 'telegram_clone',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    dialect: process.env.DB_DIALECT || 'postgres', // 'sqlite' для разработки
+    storage: process.env.DB_STORAGE || path.join(__dirname, '../data/database.sqlite'),
   },
-  cdnUrl: process.env.CDN_URL,
-  queueUrl: process.env.QUEUE_URL,
-  openaiApiKey: process.env.OPENAI_API_KEY,
-  aiModel: process.env.AI_MODEL || 'gpt-3.5-turbo',
-  aiRateLimit: parseInt(process.env.AI_RATE_LIMIT) || 10,
-  aiMaxTokens: parseInt(process.env.AI_MAX_TOKENS) || 1000,
-  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
-  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 60,
-  socketRateLimit: parseInt(process.env.SOCKET_RATE_LIMIT) || 10,
-  uploadLimit: parseInt(process.env.UPLOAD_LIMIT) || 104857600,
-  maxMessageSize: parseInt(process.env.MAX_MESSAGE_SIZE) || 10485760,
-  sessionSecret: process.env.SESSION_SECRET,
-  corsOrigin: process.env.CORS_ORIGIN || '*',
-  logLevel: process.env.LOG_LEVEL || 'info',
+
+  // Email
+  EMAIL: {
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT) || 587,
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+    from: process.env.EMAIL_FROM || 'Zhuravlev Telegram <noreply@yourdomain.com>',
+  },
+
+  // Загрузка файлов
+  UPLOAD: {
+    dir: process.env.UPLOAD_DIR || path.join(__dirname, '../uploads'),
+    maxSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50 MB
+    allowedMime: process.env.ALLOWED_MIME_TYPES
+      ? process.env.ALLOWED_MIME_TYPES.split(',')
+      : ['image/jpeg', 'image/png', 'image/gif', 'video/mp4', 'audio/mpeg', 'application/pdf'],
+  },
+
+  // Redis (опционально)
+  REDIS_URL: process.env.REDIS_URL,
+
+  // Frontend URL
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
+
+  // Rate limiting
+  RATE_LIMIT: {
+    windowMs: 15 * 60 * 1000, // 15 минут
+    max: 100, // максимум 100 запросов с одного IP
+  },
+
+  // Безопасность
+  BCRYPT_ROUNDS: 12,
 };
