@@ -1,11 +1,11 @@
-// settings.js – user settings (theme, wallpaper, language, privacy, notifications)
+// settings.js – настройки пользователя (тема, язык, приватность, уведомления)
 const express = require('express');
 const router = express.Router();
 const authenticateToken = require('./authMiddleware');
 const { db } = require('./database');
 const logger = require('./logger');
 
-// Get all settings
+// Получить все настройки текущего пользователя
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const result = await db.query(
@@ -20,7 +20,7 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Update settings
+// Обновить настройки
 router.put('/', authenticateToken, async (req, res) => {
   try {
     const { theme, wallpaper, language, privacy_settings, notification_settings } = req.body;
@@ -39,48 +39,6 @@ router.put('/', authenticateToken, async (req, res) => {
   } catch (err) {
     logger.error('Update settings error:', err);
     res.status(500).json({ error: 'Failed to update settings' });
-  }
-});
-
-// Privacy options: everyone, contacts, nobody
-const privacyLevels = ['everyone', 'contacts', 'nobody'];
-
-// Update a specific privacy setting
-router.put('/privacy/:key', authenticateToken, async (req, res) => {
-  try {
-    const { key } = req.params; // phone, lastSeen, photo, status, groups, calls
-    const { value } = req.body;
-    if (!privacyLevels.includes(value)) {
-      return res.status(400).json({ error: 'Invalid privacy level' });
-    }
-
-    const user = await db.query('SELECT privacy_settings FROM users WHERE id = $1', [req.user.id]);
-    let privacy = user.rows[0]?.privacy_settings || {};
-    privacy[key] = value;
-
-    await db.query(
-      'UPDATE users SET privacy_settings = $1 WHERE id = $2',
-      [JSON.stringify(privacy), req.user.id]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Update privacy error:', err);
-    res.status(500).json({ error: 'Failed to update privacy' });
-  }
-});
-
-// Update notification settings
-router.put('/notifications', authenticateToken, async (req, res) => {
-  try {
-    const settings = req.body;
-    await db.query(
-      'UPDATE users SET notification_settings = $1 WHERE id = $2',
-      [JSON.stringify(settings), req.user.id]
-    );
-    res.json({ success: true });
-  } catch (err) {
-    logger.error('Update notification settings error:', err);
-    res.status(500).json({ error: 'Failed to update notification settings' });
   }
 });
 
