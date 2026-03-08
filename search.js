@@ -1,85 +1,77 @@
+// search.js — глобальный поиск и поиск по сообщениям
 const express = require('express');
-const { query } = require('./database');
-const logger = require('./logger');
 const router = express.Router();
+const authenticateToken = require('./authMiddleware');
+const { db } = require('./database');
+const logger = require('./logger');
 
-router.get('/users', async (req, res) => {
-  const q = req.query.q;
-  if (!q || q.length < 2) return res.json([]);
+// Глобальный поиск пользователей, каналов, групп
+router.get('/', authenticateToken, async (req, res) => {
   try {
-    const result = await query(
-      `SELECT id, uid, username, avatar, bio, online
+    const { q } = req.query;
+    if (!q || q.length < 2) {
+      return res.json({ users: [], chats: [] });
+    }
+
+    // Поиск пользователей
+    const users = await db.query(
+      `SELECT id, username, avatar, status, last_seen
        FROM users
-       WHERE username ILIKE $1 OR (bio ILIKE $1 AND bio IS NOT NULL)
+       WHERE username ILIKE $1 OR name ILIKE $1
        LIMIT 20`,
       [`%${q}%`]
     );
-    res.json(result.rows);
+
+    // Поиск публичных чатов (групп и каналов)
+    const chats = await db.query(
+      `SELECT id, type, title, avatar, description, privacy
+       FROM chats
+       WHERE (type = 'group' OR type = 'channel') AND privacy = 'public' AND title ILIKE $1
+       LIMIT 20`,
+      [`%${q}%`]
+    );
+
+    res.json({ users: users.rows, chats: chats.rows });
   } catch (err) {
-    logger.error('Search users error', err);
-    res.status(500).json({ error: 'Database error' });
+    logger.error('Global search error:', err);
+    res.status(500).json({ error: 'Ошибка поиска' });
   }
 });
 
-router.get('/messages', async (req, res) => {
-  const { q, chatId } = req.query;
-  if (!q || q.length < 2 || !chatId) return res.status(400).json({ error: 'Missing parameters' });
-
+// Поиск сообщений в конкретном чате
+router.get('/messages/:chatId', authenticateToken, async (req, res) => {
   try {
-    const result = await query(
-      `SELECT m.id, m.uid, m.type, m.content as text, m.media, m.created_at,
-              u.id as sender_id, u.username as sender_username, u.avatar as sender_avatar
+    const { chatId } = req.params;
+    const { q } = req.query;
+    const userId = req.user.id;
+
+    if (!q || q.length < 2) {
+      return res.json([]);
+    }
+
+    // Проверка доступа
+    const access = await db.query(
+      'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    if (access.rows.length === 0) {
+      return res.status(403).json({ error: 'Нет доступа к чату' });
+    }
+
+    const result = await db.query(
+      `SELECT m.*, u.username as sender_username, u.avatar as sender_avatar
        FROM messages m
-       LEFT JOIN users u ON m.sender_id = u.id
-       WHERE m.chat_id = $1 AND m.deleted = false AND m.content ILIKE $2
+       JOIN users u ON m.sender_id = u.id
+       WHERE m.chat_id = $1 AND m.content ILIKE $2
        ORDER BY m.created_at DESC
        LIMIT 50`,
       [chatId, `%${q}%`]
     );
-    res.json(result.rows.map(r => ({
-      id: r.id,
-      uid: r.uid,
-      type: r.type,
-      text: r.text,
-      media: r.media,
-      created_at: r.created_at,
-      sender: r.sender_id ? {
-        id: r.sender_id,
-        username: r.sender_username,
-        avatar: r.sender_avatar
-      } : null
-    })));
-  } catch (err) {
-    logger.error('Search messages error', err);
-    res.status(500).json({ error: 'Database error' });
-  }
-});
 
-router.get('/chats', async (req, res) => {
-  const q = req.query.q;
-  const userId = req.userId;
-  if (!q || q.length < 2) return res.json([]);
-
-  try {
-    const result = await query(
-      `SELECT DISTINCT c.id, c.uid, c.type, c.title, c.avatar,
-              (SELECT row_to_json(msg) FROM (
-                 SELECT m.id, m.content as text, m.created_at
-                 FROM messages m WHERE m.chat_id = c.id AND m.deleted = false
-                 ORDER BY m.created_at DESC LIMIT 1
-               ) msg) as last_message
-       FROM chats c
-       LEFT JOIN chat_members cm ON c.id = cm.chat_id
-       LEFT JOIN users u ON cm.user_id = u.id
-       WHERE c.type IN ('group', 'channel') AND c.title ILIKE $1
-          OR (c.type = 'private' AND u.username ILIKE $1)
-       LIMIT 20`,
-      [`%${q}%`]
-    );
     res.json(result.rows);
   } catch (err) {
-    logger.error('Search chats error', err);
-    res.status(500).json({ error: 'Database error' });
+    logger.error('Message search error:', err);
+    res.status(500).json({ error: 'Ошибка поиска сообщений' });
   }
 });
 
