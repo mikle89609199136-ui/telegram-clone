@@ -1,4 +1,4 @@
-// auth.js — маршруты аутентификации (регистрация, вход, выход, восстановление)
+// auth.js – authentication routes
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
@@ -7,24 +7,23 @@ const config = require('./config');
 const logger = require('./logger');
 const { db } = require('./database');
 const { hashPassword, comparePassword, sanitizeUser } = require('./utils');
-const { sendVerificationEmail, sendPasswordResetEmail } = require('./email'); // будет в notify
+const { sendVerificationEmail, sendPasswordResetEmail } = require('./notifications'); // email functions
 
-// Регистрация
+// Register
 router.post('/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
     if (!username || !email || !password) {
-      return res.status(400).json({ error: 'Все поля обязательны' });
+      return res.status(400).json({ error: 'All fields required' });
     }
 
-    // Проверка существования
     const existing = await db.query(
       'SELECT id FROM users WHERE username = $1 OR email = $2',
       [username, email]
     );
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Имя пользователя или email уже заняты' });
+      return res.status(409).json({ error: 'Username or email already taken' });
     }
 
     const hashed = await hashPassword(password);
@@ -40,7 +39,6 @@ router.post('/register', async (req, res) => {
       expiresIn: config.JWT_EXPIRES_IN,
     });
 
-    // Запоминаем сессию (устройство)
     const deviceInfo = req.headers['user-agent'];
     const sessionId = uuidv4();
     await db.query(
@@ -49,8 +47,7 @@ router.post('/register', async (req, res) => {
       [sessionId, userId, token, deviceInfo]
     );
 
-    // Отправка приветственного письма (опционально)
-    // sendVerificationEmail(email, token);
+    // sendVerificationEmail(email, token); // optional
 
     res.status(201).json({
       token,
@@ -58,17 +55,17 @@ router.post('/register', async (req, res) => {
     });
   } catch (err) {
     logger.error('Registration error:', err);
-    res.status(500).json({ error: 'Ошибка регистрации' });
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
-// Вход
+// Login
 router.post('/login', async (req, res) => {
   try {
     const { identifier, password } = req.body;
 
     if (!identifier || !password) {
-      return res.status(400).json({ error: 'Введите логин и пароль' });
+      return res.status(400).json({ error: 'Identifier and password required' });
     }
 
     const result = await db.query(
@@ -78,10 +75,9 @@ router.post('/login', async (req, res) => {
     const user = result.rows[0];
 
     if (!user || !(await comparePassword(password, user.password_hash))) {
-      return res.status(401).json({ error: 'Неверный логин или пароль' });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Обновляем статус
     await db.query(
       'UPDATE users SET status = $1, last_seen = NOW() WHERE id = $2',
       ['online', user.id]
@@ -91,7 +87,6 @@ router.post('/login', async (req, res) => {
       expiresIn: config.JWT_EXPIRES_IN,
     });
 
-    // Запоминаем сессию
     const deviceInfo = req.headers['user-agent'];
     const sessionId = uuidv4();
     await db.query(
@@ -106,11 +101,11 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     logger.error('Login error:', err);
-    res.status(500).json({ error: 'Ошибка входа' });
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
-// Выход (удаляем сессию)
+// Logout
 router.post('/logout', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -120,30 +115,30 @@ router.post('/logout', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Logout error:', err);
-    res.status(500).json({ error: 'Ошибка выхода' });
+    res.status(500).json({ error: 'Logout failed' });
   }
 });
 
-// Запрос на восстановление пароля
+// Forgot password
 router.post('/forgot', async (req, res) => {
   try {
     const { email } = req.body;
     const result = await db.query('SELECT id FROM users WHERE email = $1', [email]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Пользователь с таким email не найден' });
+      return res.status(404).json({ error: 'User not found' });
     }
 
     const resetToken = jwt.sign({ email }, config.JWT_SECRET, { expiresIn: '1h' });
     await sendPasswordResetEmail(email, resetToken);
 
-    res.json({ success: true, message: 'Инструкции отправлены на email' });
+    res.json({ success: true, message: 'Reset instructions sent to email' });
   } catch (err) {
     logger.error('Forgot password error:', err);
-    res.status(500).json({ error: 'Ошибка отправки письма' });
+    res.status(500).json({ error: 'Failed to send email' });
   }
 });
 
-// Сброс пароля
+// Reset password
 router.post('/reset', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
@@ -151,13 +146,12 @@ router.post('/reset', async (req, res) => {
     try {
       decoded = jwt.verify(token, config.JWT_SECRET);
     } catch {
-      return res.status(400).json({ error: 'Неверная или просроченная ссылка' });
+      return res.status(400).json({ error: 'Invalid or expired token' });
     }
 
     const hashed = await hashPassword(newPassword);
     await db.query('UPDATE users SET password_hash = $1 WHERE email = $2', [hashed, decoded.email]);
 
-    // Удаляем все сессии пользователя
     const userResult = await db.query('SELECT id FROM users WHERE email = $1', [decoded.email]);
     if (userResult.rows[0]) {
       await db.query('DELETE FROM sessions WHERE user_id = $1', [userResult.rows[0].id]);
@@ -166,7 +160,7 @@ router.post('/reset', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error('Reset password error:', err);
-    res.status(500).json({ error: 'Ошибка смены пароля' });
+    res.status(500).json({ error: 'Password reset failed' });
   }
 });
 
