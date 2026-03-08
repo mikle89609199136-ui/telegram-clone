@@ -1,46 +1,22 @@
+// authMiddleware.js — проверка JWT токена
 const jwt = require('jsonwebtoken');
 const config = require('./config');
-const { query } = require('./database');
+const logger = require('./logger');
 
-async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'No token provided' });
+module.exports = function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
 
-  const token = authHeader.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Invalid token format' });
-
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret);
-    const session = await query('SELECT user_id FROM sessions WHERE token = $1', [token]);
-    if (!session.rows.length) {
-      return res.status(401).json({ error: 'Session expired' });
-    }
-    req.userId = decoded.userId;
-    next();
-  } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' });
-    }
-    return res.status(401).json({ error: 'Invalid token' });
+  if (!token) {
+    return res.status(401).json({ error: 'Токен не предоставлен' });
   }
-}
 
-async function socketAuth(socket, next) {
-  const token = socket.handshake.auth.token;
-  if (!token) return next(new Error('Authentication error'));
-
-  try {
-    const decoded = jwt.verify(token, config.jwtSecret);
-    const session = await query('SELECT user_id FROM sessions WHERE token = $1', [token]);
-    if (!session.rows.length) {
-      return next(new Error('Session expired'));
+  jwt.verify(token, config.JWT_SECRET, (err, user) => {
+    if (err) {
+      logger.warn('Invalid token', err.message);
+      return res.status(403).json({ error: 'Неверный или просроченный токен' });
     }
-    socket.userId = decoded.userId;
+    req.user = user;
     next();
-  } catch (err) {
-    next(new Error('Authentication error'));
-  }
-}
-
-module.exports = authMiddleware;
-module.exports.socketAuth = socketAuth;
+  });
+};
