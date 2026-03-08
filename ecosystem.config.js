@@ -1,29 +1,20 @@
 module.exports = {
-  apps: [
-    {
-      name: 'craheapp-api',
-      script: 'server.js',
-      env: { SERVICE: 'api', NODE_ENV: 'production' },
-      instances: 'max',
-      exec_mode: 'cluster',
+  apps: [{
+    name: 'telegram-clone',
+    script: './src/server.js',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production',
     },
-    {
-      name: 'craheapp-ws',
-      script: 'server.js',
-      env: { SERVICE: 'ws', NODE_ENV: 'production' },
-      instances: 2,
+    env_production: {
+      NODE_ENV: 'production',
     },
-    {
-      name: 'craheapp-media',
-      script: 'server.js',
-      env: { SERVICE: 'media', NODE_ENV: 'production' },
-      instances: 1,
-    },
-    {
-      name: 'craheapp-ai',
-      script: 'server.js',
-      env: { SERVICE: 'ai', NODE_ENV: 'production' },
-      instances: 1,
-    },
-  ],
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true,
+  }],
 };
