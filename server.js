@@ -1,4 +1,4 @@
-// server.js — точка входа с правильным health check и слушанием порта
+// server.js — с отладкой переменных окружения
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -9,16 +9,19 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 
+// ========== ОТЛАДКА ==========
+console.log('🔍 Все переменные окружения (ключи):', Object.keys(process.env).filter(key => !key.includes('SECRET') && !key.includes('PASS')));
+console.log('🔍 JWT_SECRET присутствует:', process.env.JWT_SECRET ? '✅ ДА' : '❌ НЕТ');
+
 const config = require('./config');
 const logger = require('./logger');
 const envCheck = require('./env');
 const { corsOptions, limiter, helmetConfig } = require('./security');
 const { handleMulterError } = require('./upload');
 const { db } = require('./database');
-const websocket = require('./websocket'); // если у вас websocket.js
+const websocket = require('./websocket');
 
-// Проверка обязательных переменных окружения
-envCheck();
+envCheck(); // теперь только предупреждает
 
 const app = express();
 const server = http.createServer(app);
@@ -31,13 +34,11 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 
-// Rate limiter для всех API
+// Rate limiter
 app.use('/api/', limiter);
 
-// Статические файлы из public
+// Статика
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Загруженные файлы
 app.use('/uploads', express.static(config.UPLOAD.dir));
 
 // ========== МАРШРУТЫ ==========
@@ -54,11 +55,9 @@ app.use('/api/settings', require('./settings'));
 app.use('/api/profile', require('./profile'));
 app.use('/api/notifications', require('./notifications'));
 app.use('/api/ai', require('./ai'));
+app.use('/api/upload', require('./upload'));
 
-// Загрузка файлов (обработчик ошибок multer)
-app.use('/api/upload', require('./upload')); // если upload.js экспортирует роутер
-
-// HEALTH CHECK — ОБЯЗАТЕЛЬНО ДЛЯ RAILWAY
+// HEALTH CHECK
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
@@ -67,15 +66,15 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Обработка ошибок multer (если upload.js не имеет своего middleware)
+// Обработка ошибок multer
 app.use(handleMulterError);
 
-// Для всех остальных запросов отдаём chat.html (SPA)
+// SPA
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'chat.html'));
 });
 
-// ========== ЗАПУСК СЕРВЕРА ==========
+// ========== ЗАПУСК ==========
 const PORT = config.PORT;
 server.listen(PORT, '0.0.0.0', () => {
   logger.info(`🚀 Server running on port ${PORT}`);
