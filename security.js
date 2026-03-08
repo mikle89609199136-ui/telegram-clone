@@ -1,4 +1,4 @@
-// security.js — настройки безопасности (helmet, cors, rate limit)
+// security.js – security middleware (helmet, cors, rate limit)
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -9,11 +9,10 @@ const corsOptions = {
   optionsSuccessStatus: 200,
 };
 
-// Правило 58
 const limiter = rateLimit({
   windowMs: config.RATE_LIMIT.windowMs,
   max: config.RATE_LIMIT.max,
-  message: { error: 'Слишком много запросов, попробуйте позже' },
+  message: { error: 'Too many requests, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
