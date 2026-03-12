@@ -1,154 +1,106 @@
-// websocket.js – Socket.IO realtime events
 const jwt = require('jsonwebtoken');
-const { Server } = require('socket.io');
-const config = require('./config');
-const logger = require('./logger');
-const { db } = require('./database');
-const { generateId, formatMessageTime } = require('./utils');
-const { sendPushNotification } = require('./notifications');
+const { getData, saveData } = require('./database');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 module.exports = (server) => {
-  const io = new Server(server, {
-    cors: {
-      origin: config.FRONTEND_URL,
-      methods: ['GET', 'POST'],
-    },
-    pingTimeout: 60000,
-    pingInterval: 25000,
+  const io = require('socket.io')(server, {
+    cors: { origin: '*' }
   });
 
-  // Authentication middleware for socket
+  // Аутентификация через JWT
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
-    if (!token) {
-      return next(new Error('Authentication error: token missing'));
-    }
-    jwt.verify(token, config.JWT_SECRET, (err, user) => {
-      if (err) {
-        return next(new Error('Authentication error: invalid token'));
-      }
-      socket.userId = user.id;
-      socket.username = user.username;
+    if (!token) return next(new Error('Authentication error'));
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
+      if (err) return next(new Error('Invalid token'));
+      socket.userId = decoded.userId;
+      socket.username = decoded.username;
       next();
     });
   });
 
-  io.on('connection', async (socket) => {
-    const userId = socket.userId;
-    logger.info(`User ${socket.username} (${userId}) connected`);
+  io.on('connection', (socket) => {
+    console.log(`User ${socket.username} (${socket.userId}) connected`);
 
-    // Update user status to online
-    await db.query('UPDATE users SET status = $1, last_seen = NOW() WHERE id = $2', ['online', userId]);
+    // Присоединяемся к комнате своего userId для личных уведомлений
+    socket.join(`user:${socket.userId}`);
 
-    // Join rooms for all chats the user is part of
-    const chats = await db.query('SELECT chat_id FROM chat_participants WHERE user_id = $1', [userId]);
-    chats.rows.forEach(row => {
-      socket.join(`chat:${row.chat_id}`);
-    });
-    // Personal room for notifications
-    socket.join(`user:${userId}`);
-
-    // --- Event handlers ---
-
-    // Send a new message
-    socket.on('sendMessage', async (data) => {
-      try {
-        const { chatId, content, type = 'text', fileUrl, fileName, fileSize, mimeType, pollData, aiMetadata } = data;
-        const senderId = userId;
-
-        // Check access
-        const access = await db.query(
-          'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-          [chatId, senderId]
-        );
-        if (access.rows.length === 0) {
-          socket.emit('error', { message: 'No access to this chat' });
-          return;
-        }
-
-        const messageId = generateId();
-        await db.query(
-          `INSERT INTO messages (id, chat_id, sender_id, content, type, file_url, file_name, file_size, mime_type, poll_data, ai_metadata, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
-          [messageId, chatId, senderId, content, type, fileUrl, fileName, fileSize, mimeType, pollData ? JSON.stringify(pollData) : null, aiMetadata ? JSON.stringify(aiMetadata) : null]
-        );
-
-        const newMsg = await db.query(
-          `SELECT m.*, u.username as sender_username, u.avatar as sender_avatar
-           FROM messages m
-           JOIN users u ON m.sender_id = u.id
-           WHERE m.id = $1`,
-          [messageId]
-        );
-        const message = newMsg.rows[0];
-
-        // Broadcast to chat room
-        io.to(`chat:${chatId}`).emit('newMessage', message);
-
-        // Update chat's last message time
-        await db.query('UPDATE chats SET updated_at = NOW() WHERE id = $1', [chatId]);
-
-        // Send push notifications to other participants
-        const participants = await db.query(
-          'SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2',
-          [chatId, senderId]
-        );
-        for (const p of participants.rows) {
-          const user = await db.query('SELECT notification_settings FROM users WHERE id = $1', [p.user_id]);
-          const settings = user.rows[0]?.notification_settings || {};
-          if (settings.messages !== false) {
-            const title = `New message from ${socket.username}`;
-            const body = content.length > 50 ? content.substring(0, 50) + '…' : content;
-            sendPushNotification(p.user_id, title, body, { chatId, messageId });
-          }
-        }
-      } catch (err) {
-        logger.error('sendMessage error:', err);
-        socket.emit('error', { message: 'Failed to send message' });
-      }
-    });
-
-    // Typing indicator
-    socket.on('typing', ({ chatId, isTyping }) => {
-      socket.to(`chat:${chatId}`).emit('userTyping', {
-        userId,
-        username: socket.username,
-        isTyping,
-      });
-    });
-
-    // Mark messages as read
-    socket.on('readMessages', async ({ chatId, messageIds }) => {
-      try {
-        // Update last_read_at for the user in this chat
-        await db.query(
-          'UPDATE chat_participants SET last_read_at = NOW() WHERE chat_id = $1 AND user_id = $2',
-          [chatId, userId]
-        );
-        // Notify others that these messages were read
-        socket.to(`chat:${chatId}`).emit('messagesRead', { userId, messageIds });
-      } catch (err) {
-        logger.error('readMessages error:', err);
-      }
-    });
-
-    // Join a new chat (after being added)
+    // Присоединиться к чату (комната чата)
     socket.on('joinChat', (chatId) => {
       socket.join(`chat:${chatId}`);
     });
 
-    // Leave a chat (if removed)
-    socket.on('leaveChat', (chatId) => {
-      socket.leave(`chat:${chatId}`);
+    // Отправить сообщение
+    socket.on('sendMessage', async (data) => {
+      const { chatId, content, type = 'text' } = data;
+
+      // Сохраняем в БД
+      const messages = getData('messages.json');
+      const newMessage = {
+        id: require('uuid').v4(),
+        chatId,
+        senderId: socket.userId,
+        senderUsername: socket.username,
+        content,
+        type,
+        timestamp: Date.now(),
+        read: false
+      };
+      messages.push(newMessage);
+      saveData('messages.json', messages);
+
+      // Отправляем всем в комнате чата
+      io.to(`chat:${chatId}`).emit('newMessage', newMessage);
+
+      // Обновляем lastMessage в чате
+      const chats = getData('chats.json');
+      const chat = chats.find(c => c.id === chatId);
+      if (chat) {
+        chat.lastMessage = content;
+        chat.lastMessageTime = Date.now();
+        saveData('chats.json', chats);
+      }
     });
 
-    // Disconnect
-    socket.on('disconnect', async () => {
-      logger.info(`User ${socket.username} disconnected`);
-      await db.query('UPDATE users SET status = $1, last_seen = NOW() WHERE id = $2', ['offline', userId]);
+    // Статус "печатает"
+    socket.on('typing', ({ chatId, isTyping }) => {
+      socket.to(`chat:${chatId}`).emit('userTyping', {
+        userId: socket.userId,
+        username: socket.username,
+        isTyping
+      });
+    });
+
+    // Прочитано
+    socket.on('markRead', ({ chatId, messageIds }) => {
+      // Обновить статус прочтения в БД
+      const messages = getData('messages.json');
+      messages.forEach(msg => {
+        if (msg.chatId === chatId && messageIds.includes(msg.id)) {
+          msg.read = true;
+        }
+      });
+      saveData('messages.json', messages);
+      socket.to(`chat:${chatId}`).emit('messagesRead', {
+        readerId: socket.userId,
+        messageIds
+      });
+    });
+
+    // Отключение
+    socket.on('disconnect', () => {
+      console.log(`User ${socket.username} disconnected`);
+      // Обновляем статус в users.json
+      const users = getData('users.json');
+      const user = users.find(u => u.id === socket.userId);
+      if (user) {
+        user.status = 'offline';
+        user.lastSeen = new Date().toISOString();
+        saveData('users.json', users);
+      }
     });
   });
 
-  // Правило 57: клиент сам должен переподключаться; на сервере дополнительно ничего не нужно
   return io;
 };
