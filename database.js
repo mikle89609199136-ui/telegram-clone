@@ -10,7 +10,31 @@ let db;
 // SQLite
 const dbPath = config.DB.storage;
 fs.ensureDirSync(path.dirname(dbPath));
+const fs = require('fs-extra');
+const path = require('path');
 
+const DATA_DIR = path.join(__dirname, 'data');
+fs.ensureDirSync(DATA_DIR);
+
+const getData = (filename) => {
+  const filePath = path.join(DATA_DIR, filename);
+  return fs.readJsonSync(filePath, { throws: false }) || [];
+};
+
+const saveData = (filename, data) => {
+  const filePath = path.join(DATA_DIR, filename);
+  fs.writeJsonSync(filePath, data, { spaces: 2 });
+};
+
+// Инициализация пустых файлов при первом запуске
+['users.json', 'chats.json', 'messages.json'].forEach(file => {
+  const filePath = path.join(DATA_DIR, file);
+  if (!fs.existsSync(filePath)) {
+    fs.writeJsonSync(filePath, [], { spaces: 2 });
+  }
+});
+
+module.exports = { getData, saveData };
 const sqliteDb = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     logger.error('Failed to open SQLite database', err);
@@ -226,3 +250,4 @@ const initSqlite = async () => {
 initSqlite();
 
 module.exports = { db };
+
