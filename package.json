@@ -1,46 +1,24 @@
 {
-  "name": "zhuravlev-messenger",
+  "name": "telegram-clone",
   "version": "1.0.0",
-  "description": "Telegram-like messenger with IRIS AI",
+  "description": "Telegram clone with individual accounts",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js",
-    "migrate": "node migrate.js",
-    "lint": "eslint .",
-    "format": "prettier --write ."
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "socket.io": "^4.7.5",
-    "cors": "^2.8.5",
+    "socket.io": "^4.7.2",
     "bcrypt": "^5.1.1",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.8",
-    "multer": "^1.4.5-lts.1",
-    "fs-extra": "^11.2.0",
-    "uuid": "^9.0.1",
+    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "helmet": "^7.1.0",
-    "compression": "^1.7.4",
-    "express-rate-limit": "^7.1.5",
-    "morgan": "^1.10.0",
-    "pg": "^8.11.3",
-    "sqlite3": "^5.1.6",
-    "sqlite": "^5.1.1",
-    "redis": "^4.6.10",
-    "openai": "^4.20.0",
-    "web-push": "^3.6.7"
+    "fs-extra": "^11.1.1",
+    "uuid": "^9.0.0",
+    "multer": "^1.4.5-lts.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "eslint": "^8.56.0",
-    "prettier": "^3.2.4"
-  },
-  "keywords": ["telegram", "clone", "messenger", "ai", "iris", "realtime", "socket.io", "railway"],
-  "author": "Mikhail Zhuravlev",
-  "license": "MIT"
+    "nodemon": "^3.0.1"
+  }
 }
